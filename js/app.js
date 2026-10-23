@@ -910,7 +910,7 @@ async function exportCSV() {
 }
 
 /* ---------- application installable, mises à jour ---------- */
-const APP_VERSION = "1.1.0";
+const APP_VERSION = "1.1.1";
 let swWaiting = null, installEvt = null, localN = 0;
 if ("serviceWorker" in navigator && location.protocol !== "file:") {
   window.addEventListener("load", () => {
@@ -1057,7 +1057,7 @@ function exportBackup() {
   const o = {format: "registre-troupeau", version: 1, exporteLe: new Date().toISOString()};
   if (Store.state.farmName) o.exploitation = Store.state.farmName;
   COLS_DB.forEach(c => { o[c] = Object.fromEntries([...S[c]].map(([k, v]) => { const {id, ...r} = v; return [k, r]; })); });
-  try { download(`registre-troupeau-${todayISO()}.json`, JSON.stringify(o, null, 1), "application/json"); toast(`Sauvegarde exportée : ${S.animaux.size} animaux, ${S.evenements.size} évènements, ${S.finances.size} opérations.`); }
+  try { download(`ma-bete-${todayISO()}.json`, JSON.stringify(o, null, 1), "application/json"); toast(`Sauvegarde exportée : ${S.animaux.size} animaux, ${S.evenements.size} évènements, ${S.finances.size} opérations.`); }
   catch { toast("Export impossible sur cet appareil."); }
 }
 let RESTORE = null;

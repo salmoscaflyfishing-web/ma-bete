@@ -4,7 +4,7 @@
 
 Application de gestion de troupeau bovins viande : inventaire (colonnes au choix, filtres, tri par numéro de travail, « Dernier veau »), import de l'inventaire EDE, reproduction, santé et délais d'attente, pesées et GMQ, finances.
 
-**Adresse de l'application : https://salmoscaflyfishing-web.github.io/registre-troupeau/**
+**Adresse de l'application : https://salmoscaflyfishing-web.github.io/ma-bete/**
 
 - Elle s'installe comme une vraie application sur Android, iPhone et ordinateur (icône de boucle jaune).
 - Elle fonctionne **sans réseau** : tout est enregistré d'abord sur l'appareil. Les modifications faites hors ligne partent toutes seules au retour du réseau.
@@ -40,7 +40,7 @@ Supabase est le service en ligne qui garde la copie partagée du registre.
 1. Allez sur **https://supabase.com** et cliquez sur **Start your project**.
 2. Créez un compte (avec votre adresse e-mail, ou avec votre compte GitHub).
 3. Cliquez sur **New project** et remplissez :
-   - **Name** : `registre-troupeau`
+   - **Name** : `ma-bete`
    - **Database Password** : cliquez sur **Generate a password**, puis **notez-le** dans un endroit sûr (vous n'en aurez normalement plus besoin, mais gardez-le).
    - **Region** : choisissez **West EU (Paris)** (ou une autre région « EU » si Paris n'est pas proposée).
    - **Plan** : **Free** (gratuit).
@@ -65,10 +65,10 @@ Ce réglage permet aux liens reçus par e-mail (confirmation de compte, mot de p
 
 1. Menu de gauche : **Authentication** → **URL Configuration**.
 2. **Site URL** : remplacez `http://localhost:3000` par
-   `https://salmoscaflyfishing-web.github.io/registre-troupeau/`
+   `https://salmoscaflyfishing-web.github.io/ma-bete/`
    puis cliquez sur **Save**.
 3. **Redirect URLs** : cliquez sur **Add URL**, collez
-   `https://salmoscaflyfishing-web.github.io/registre-troupeau/**`
+   `https://salmoscaflyfishing-web.github.io/ma-bete/**`
    puis **Save URLs**.
 4. Vérifiez dans **Authentication** → **Sign In / Providers** → **Email** que **Enable Email provider** et **Confirm email** sont bien activés (c'est le réglage par défaut). La confirmation d'e-mail est importante : c'est elle qui garantit qu'une invitation ne peut être utilisée que par la bonne personne.
 
@@ -96,7 +96,7 @@ Ce réglage permet aux liens reçus par e-mail (confirmation de compte, mot de p
 
 ## Étape 5 — Premier lancement : votre compte et votre exploitation
 
-1. Ouvrez **https://salmoscaflyfishing-web.github.io/registre-troupeau/** (rechargez la page si elle était déjà ouverte).
+1. Ouvrez **https://salmoscaflyfishing-web.github.io/ma-bete/** (rechargez la page si elle était déjà ouverte).
 2. Saisissez votre e-mail et un mot de passe (6 caractères minimum), puis **Créer un compte**.
 3. Ouvrez l'e-mail reçu et cliquez sur le lien de confirmation. Revenez sur l'application et touchez **Se connecter**.
 4. Donnez un nom à votre exploitation (par ex. « GAEC du Puech ») → **Créer l'exploitation**. Vous en êtes le **propriétaire**.
@@ -142,7 +142,7 @@ Astuce Android : quand un clavier Bluetooth est connecté, le clavier de l'écra
 
 ## Sauvegardes
 
-**Compte** → **Exporter une sauvegarde** crée un fichier `registre-troupeau-AAAA-MM-JJ.json` avec tous les animaux, évènements et opérations. Gardez-en une copie de temps en temps (e-mail, clé USB).
+**Compte** → **Exporter une sauvegarde** crée un fichier `ma-bete-AAAA-MM-JJ.json` avec tous les animaux, évènements et opérations. Gardez-en une copie de temps en temps (e-mail, clé USB).
 
 **Compte** → **Restaurer une sauvegarde** relit ce fichier (ou votre ancien fichier au format `{"format":"registre-troupeau","version":1,…}`), au choix :
 - **Fusionner** : ajoute et met à jour, sans rien supprimer ;
