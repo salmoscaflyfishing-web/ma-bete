@@ -241,6 +241,25 @@ function emptyHerd() {
   return `<div class="panel empty"><h3>Aucun animal dans le registre</h3><p>Importez l'inventaire de votre EDE ou ajoutez votre premier bovin avec son numéro national.</p>${readOnly ? "" : `<div class="row" style="justify-content:center"><button class="btn" data-act="import">Importer l'inventaire EDE</button><button class="btn primary" data-act="new-animal">Ajouter un animal</button></div>`}</div>`;
 }
 
+/* ---- vêlages d'une année ----
+   Compte à la fois les vêlages saisis et les veaux nés sur l'exploitation cette année-là
+   (import EDE, saisie d'un animal). Un même vêlage n'est compté qu'une fois : la clé est
+   « mère + date », ce qui regroupe aussi les jumeaux ; sans mère connue, le veau compte seul. */
+const NE_ICI = o => !o || o === "Né sur l'exploitation";
+function velagesAnnee(yr) {
+  const keys = new Set();
+  for (const e of S.evenements.values()) {
+    if (e.type !== "Vêlage" || !(e.date || "").startsWith(yr)) continue;
+    const m = S.animaux.get(e.animal);
+    keys.add(m && m.numero ? `${norm(m.numero)}|${e.date}` : `e:${e.id}`);
+  }
+  for (const a of S.animaux.values()) {
+    if (!(a.naissance || "").startsWith(yr) || !NE_ICI(a.origine)) continue;
+    keys.add(a.mere ? `${norm(a.mere)}|${a.naissance}` : `n:${norm(a.numero) || a.id}`);
+  }
+  return keys.size;
+}
+
 /* ---- tableau de bord ---- */
 function vTableau() {
   const pr = presents(), today = todayISO();
@@ -249,7 +268,7 @@ function vTableau() {
   const fem = pr.filter(a => D.get(a.id).repro);
   const gest = fem.filter(a => ["Gestante","Inséminée"].includes(D.get(a.id).repro)).length;
   const yr = String(new Date().getFullYear());
-  const velAn = [...S.evenements.values()].filter(e => e.type === "Vêlage" && (e.date || "").startsWith(yr)).length;
+  const velAn = velagesAnnee(yr);
   const fin = [...S.finances.values()].filter(f => (f.date || "").startsWith(yr));
   const solde = fin.reduce((s, f) => s + (f.sens === "Recette" ? 1 : -1) * (+f.montant || 0), 0);
   const alerts = buildAlerts();
@@ -463,7 +482,7 @@ function vRepro() {
     <div class="kpi"><b>${gest.filter(a=>D.get(a.id).repro==="Gestante").length}</b><span>Gestantes confirmées</span></div>
     <div class="kpi"><b>${diag.length}</b><span>À diagnostiquer</span></div>
     <div class="kpi"><b>${vides.length}</b><span>Vides</span></div>
-    <div class="kpi"><b>${vAn.length}</b><span>Vêlages ${yr}</span></div>
+    <div class="kpi"><b>${velagesAnnee(yr)}</b><span>Vêlages ${yr}</span></div>
     <div class="kpi"><b>${ivv ?? "—"}</b><span>IVV moyen (j)</span></div>
     <div class="kpi"><b>${vAn.length ? Math.round(diff/vAn.length*100) : 0}%</b><span>Vêlages difficiles</span></div>
     <div class="kpi"><b>${vAn.length ? Math.round(morts/vAn.length*100) : 0}%</b><span>Mortinatalité</span></div>
@@ -1006,7 +1025,7 @@ async function exportCSV() {
 }
 
 /* ---------- application installable, mises à jour ---------- */
-const APP_VERSION = "1.2.0";
+const APP_VERSION = "1.2.1";
 let swWaiting = null, installEvt = null, localN = 0;
 if ("serviceWorker" in navigator && location.protocol !== "file:") {
   window.addEventListener("load", () => {
