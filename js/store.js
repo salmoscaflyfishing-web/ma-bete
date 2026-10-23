@@ -3,15 +3,17 @@
    partagée partent dans une file d'attente (« outbox ») envoyée dès que le réseau et la session le permettent. */
 (() => {
 "use strict";
-const COLS = ["animaux", "evenements", "finances"];
+const COLS = ["animaux", "evenements", "finances", "boucles"];
 const LOCAL = "local";
 const CFG = window.REGISTRE_CONFIG || {};
 const configured = !!(CFG.supabaseUrl && CFG.supabaseAnonKey && window.supabase && window.supabase.createClient);
 const PAGE = 1000, BATCH = 300;
 
-const S = { animaux: new Map(), evenements: new Map(), finances: new Map() };
+const S = { animaux: new Map(), evenements: new Map(), finances: new Map(), boucles: new Map() };
 const st = { phase: "init", farm: null, farmName: "", role: null, user: null, farms: [], online: navigator.onLine,
-             pending: 0, syncing: false, authProblem: false, realtime: false, lastSync: null };
+             pending: 0, syncing: false, authProblem: false, realtime: false, lastSync: null, needsMigration: false };
+// collections refusées par une base Supabase pas encore mise à jour (gardées en attente sur l'appareil)
+const blockedCols = new Set();
 const listeners = { change: [], status: [], message: [] };
 const emit = (t, x) => listeners[t].forEach(f => { try { f(x); } catch (e) { console.error(e); } });
 const emitStatus = () => emit("status", st);
@@ -126,7 +128,7 @@ async function doFlush() {
   if (!canSync()) return;
   const farm = st.farm;
   for (;;) {
-    const entries = await farmOutbox(farm, BATCH);
+    const entries = (await farmOutbox(farm)).filter(e => !blockedCols.has(e.col)).slice(0, BATCH);
     if (!entries.length || farm !== st.farm) return;
     st.syncing = true; emitStatus();
     const last = new Map(); entries.forEach(e => last.set(e.k, e));
@@ -136,6 +138,11 @@ async function doFlush() {
       if (status === 401 || /jwt/i.test(error.message || "")) {
         const r = await sb.auth.refreshSession().catch(() => ({ error: true }));
         if (r.error) { st.authProblem = true; emitStatus(); return; }
+        continue;
+      }
+      if (error.code === "23514" && rows.some(r => r.collection === "boucles") && !blockedCols.has("boucles")) {
+        // base créée avant le stock de boucles : on garde ces modifications en attente et on envoie le reste
+        blockedCols.add("boucles"); st.needsMigration = true; emitStatus();
         continue;
       }
       if (status >= 400 && status < 500 && status !== 408 && status !== 429) {

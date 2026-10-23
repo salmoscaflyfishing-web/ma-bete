@@ -50,7 +50,7 @@ const FIN_CAT = {
 const S = Store.S;
 const COLS_DB = Store.COLS;
 let mode = "init", readOnly = false;
-const loaded = { animaux:false, evenements:false, finances:false };
+const loaded = { animaux:false, evenements:false, finances:false, boucles:false };
 
 async function put(col, id, data) {
   const clean = {}; Object.entries(data).forEach(([k, v]) => { if (k !== "id" && v !== undefined) clean[k] = v; });
@@ -227,6 +227,7 @@ function banners() {
     ? `<div class="banner warn"><span class="grow">Mode local : les données restent sur cet appareil uniquement. Connectez-vous pour les partager avec vos autres appareils et vos associés.</span><button class="btn sm" data-act="show-login">Se connecter</button></div>`
     : `<div class="banner warn"><span class="grow">Mode local : les données restent sur cet appareil uniquement. Exportez régulièrement une sauvegarde (menu Compte). La synchronisation entre appareils se règle dans config.js (voir le guide).</span></div>`;
   if (mode === "cloud" && st.authProblem) h += `<div class="banner warn"><span class="grow">Votre session a expiré.${st.pending ? ` ${st.pending} modification${st.pending > 1 ? "s attendent" : " attend"} d'être envoyée${st.pending > 1 ? "s" : ""}.` : ""} Reconnectez-vous pour synchroniser.</span><button class="btn sm" data-act="show-login">Se reconnecter</button></div>`;
+  if (mode === "cloud" && st.needsMigration) h += `<div class="banner warn"><span class="grow">Le stock de boucles reste pour l'instant sur cet appareil : la base Supabase doit être mise à jour. ${st.role === "owner" ? "Dans Supabase, relancez le script <b>supabase/schema.sql</b> (SQL Editor → Run), puis rechargez l'application." : "Prévenez le propriétaire de l'exploitation."}</span></div>`;
   if (mode === "cloud" && localN && !readOnly) h += `<div class="banner"><span class="grow">${localN} enregistrement${localN > 1 ? "s" : ""} saisi${localN > 1 ? "s" : ""} en mode local sur cet appareil ${localN > 1 ? "ne sont" : "n'est"} pas dans l'exploitation « ${esc(st.farmName)} ».</span><button class="btn sm primary" data-act="migrate-local">Les ajouter à l'exploitation</button><button class="btn sm" data-act="discard-local">Ignorer</button></div>`;
   if (readOnly) h += `<div class="banner"><span class="grow">Vous consultez ce registre en lecture seule.</span></div>`;
   const ex = [...S.animaux.values(), ...S.evenements.values(), ...S.finances.values()].filter(x => x.exemple).length;
@@ -278,9 +279,11 @@ function buildAlerts() {
     if (a.categorie === "Vache" && d.repro === "Vide" && d.joursVide > VIDE_ALERTE) out.push({lvl:"warn", a, t:`Vide depuis ${d.joursVide} j`, s:`Dernier vêlage le ${fmtD(d.dernierVelage)}`, o: 60});
     if (d.enDelai) out.push({lvl:"crit", a, t:"Délai d'attente viande en cours", s:`Ne pas vendre avant le ${fmtD(addDays(d.finDelai, 1))}`, o: 5});
   }
+  const sb = stockState();
+  if (sb.total && sb.dispo.length < BOUCLES_ALERTE) out.push({lvl: sb.dispo.length ? "warn" : "crit", go: "repro", t: sb.dispo.length ? `Stock de boucles bas : ${sb.dispo.length} restante${sb.dispo.length > 1 ? "s" : ""}` : "Plus de boucles en stock pour les veaux", s: "Commandez une nouvelle série auprès de l'EDE", o: 50});
   return out.sort((x, y) => x.o - y.o);
 }
-const alertHTML = x => `<button class="alert ${x.lvl}" data-act="open-animal" data-id="${esc(x.a.id)}"><span class="t"><b>${esc(x.t)}</b><small>${esc(x.s)}</small></span>${tagHTML(x.a.numero)}</button>`;
+const alertHTML = x => x.go ? `<button class="alert ${x.lvl}" data-act="goto-view" data-v="${x.go}"><span class="t"><b>${esc(x.t)}</b><small>${esc(x.s)}</small></span><span class="muted">›</span></button>` : `<button class="alert ${x.lvl}" data-act="open-animal" data-id="${esc(x.a.id)}"><span class="t"><b>${esc(x.t)}</b><small>${esc(x.s)}</small></span>${tagHTML(x.a.numero)}</button>`;
 
 /* ---- liste des animaux ---- */
 function distinct(k) { const s = new Set(); for (const a of S.animaux.values()) { const v = a[k]; if (v) s.add(v); } return [...s].sort((a,b)=>a.localeCompare(b,"fr")); }
@@ -347,11 +350,101 @@ function vAnimaux() {
    : `<div class="panel empty"><h3>Aucun animal ne correspond</h3><p>Élargissez les filtres ou la recherche.</p><button class="btn" data-act="reset-filters">Réinitialiser les filtres</button></div>`}`;
 }
 
+/* ---- stock de boucles pour les veaux ---- */
+// Une boucle est « utilisée » dès qu'un animal ou un vêlage porte son numéro : rien à cocher à la main.
+const BOUCLES_ALERTE = 5;
+const byNum = (x, y) => x.n.localeCompare(y.n, "fr", {numeric:true});
+function stockState() {
+  const usedBy = new Map();
+  for (const a of S.animaux.values()) if (a.numero) usedBy.set(norm(a.numero), {a});
+  for (const e of S.evenements.values()) if (e.type === "Vêlage" && e.veauNumero) { const n = norm(e.veauNumero); if (!usedBy.has(n)) usedBy.set(n, {e}); }
+  const dispo = [], used = [], lost = [];
+  for (const b of S.boucles.values()) {
+    const n = norm(b.numero || b.id), u = usedBy.get(n), x = {b, n, u};
+    (u ? used : b.statut === "Perdue" ? lost : dispo).push(x);
+  }
+  dispo.sort(byNum); used.sort(byNum); lost.sort(byNum);
+  return {dispo, used, lost, total: S.boucles.size};
+}
+const nextTag = () => stockState().dispo[0]?.n || "";
+const dlBoucles = () => `<datalist id="dlBoucles">${stockState().dispo.slice(0, 300).map(x => `<option value="${esc(x.n)}">`).join("")}</datalist>`;
+function tagSeries(first, n) {
+  const m = norm(first).match(/^([A-Z]{2})(\d{8,12})$/); if (!m) return null;
+  if (m[1] === "FR" && m[2].length !== 10) return null;
+  const out = [], len = m[2].length, start = Number(m[2]);
+  for (let i = 0; i < n; i++) { const s = String(start + i).padStart(len, "0"); if (s.length > len) break; out.push(m[1] + s); }
+  return out;
+}
+function stockPanel() {
+  const st = stockState(), nd = st.dispo.length, s = (k, one, many) => k > 1 ? many : one;
+  const usedRows = [...st.used.map(x => {
+      const who = x.u.a ? `${tagHTML(x.u.a.numero)} ${esc(x.u.a.nom || "")}` : `Vêlage de ${esc(animalLabel(S.animaux.get(x.u.e.animal)))}`;
+      return `<tr data-act="tag-menu" data-id="${esc(x.b.id)}"><td class="first">${tagHTML(x.n)}</td><td><span class="pill">Utilisée</span></td><td>${who}</td><td>${fmtD(x.u.a ? x.u.a.naissance || x.u.a.dateEntree : x.u.e.date)}</td></tr>`; }),
+    ...st.lost.map(x => `<tr data-act="tag-menu" data-id="${esc(x.b.id)}"><td class="first">${tagHTML(x.n)}</td><td><span class="pill crit">Perdue / abîmée</span></td><td></td><td>${fmtD(x.b.perdueLe)}</td></tr>`)].join("");
+  return `<section class="panel" id="stock"><div class="spread" style="margin-bottom:10px"><h3>Boucles pour les veaux</h3>${readOnly ? "" : `<button class="btn sm" data-act="add-tags">+ Ajouter des boucles</button>`}</div>
+  ${!st.total ? `<p class="muted" style="margin:0">Enregistrez ici les boucles reçues de l'EDE : la prochaine boucle libre sera proposée automatiquement à chaque vêlage.</p>` : `
+  <div class="row" style="margin-bottom:10px"><span class="pill ${nd < BOUCLES_ALERTE ? "warn" : "ok"}">${nd} ${s(nd, "disponible", "disponibles")}</span><span class="pill">${st.used.length} ${s(st.used.length, "utilisée", "utilisées")}</span>${st.lost.length ? `<span class="pill crit">${st.lost.length} ${s(st.lost.length, "perdue", "perdues")}</span>` : ""}</div>
+  ${nd ? `<p class="hint" style="margin:0 0 8px">Prochaine boucle proposée au vêlage : ${tagHTML(st.dispo[0].n)}</p>
+    <div class="chips">${st.dispo.slice(0, 60).map(x => `<button class="tagbtn" data-act="tag-menu" data-id="${esc(x.b.id)}" aria-label="Boucle ${esc(x.n)}">${tagHTML(x.n)}</button>`).join("")}${nd > 60 ? `<span class="muted">+ ${nd - 60} autres</span>` : ""}</div>`
+    : `<p class="muted" style="margin:0">Plus aucune boucle disponible : ajoutez la prochaine série reçue de l'EDE.</p>`}
+  ${usedRows ? `<details class="filters" data-k="openStock" ${UI.openStock ? "open" : ""} style="margin-top:12px"><summary>Boucles utilisées et perdues</summary><div class="fbody"><div class="tablebox"><table><thead><tr><th class="first">Boucle</th><th>État</th><th>Animal</th><th>Date</th></tr></thead><tbody>${usedRows}</tbody></table></div></div></details>` : ""}`}
+  </section>`;
+}
+function addTagsForm() {
+  const all = [...S.boucles.values()].map(b => ({n: norm(b.numero || b.id)})).sort(byNum);
+  const sugg = all.length ? (tagSeries(all[all.length - 1].n, 2) || [])[1] || "" : "";
+  openDlg(`<form id="fTags">
+  <div class="dlg-head"><h3>Ajouter des boucles</h3><button type="button" class="close" data-act="close" aria-label="Fermer">×</button></div>
+  <div class="dlg-body">
+    <p class="hint" style="margin:0">Saisissez le premier numéro de la série reçue de l'EDE et le nombre de boucles : les numéros suivants sont calculés automatiquement.</p>
+    <div class="form">${fld("tFirst", "Premier numéro *", inp("tFirst", sugg, "text", 'required placeholder="FR 12 0123 8001" autocomplete="off"'))}${fld("tCount", "Nombre de boucles *", inp("tCount", 20, "number", 'min="1" max="500" step="1" required inputmode="numeric"'))}</div>
+    <p id="tPreview" style="margin:0"></p>
+  </div>
+  <div class="dlg-foot"><button type="button" class="btn" data-act="close">Annuler</button><button class="btn primary" type="submit">Ajouter au stock</button></div>
+  </form>`);
+  tagsPreview();
+}
+function tagsList() { return tagSeries($("#tFirst")?.value || "", Math.max(0, Math.min(500, Math.floor(+$("#tCount")?.value || 0)))); }
+function tagsPreview() {
+  const p = $("#tPreview"); if (!p) return;
+  const list = tagsList();
+  if (!list) { p.innerHTML = `<span class="hint">Numéro attendu : FR suivi de 10 chiffres, par exemple FR 12 0123 8001.</span>`; return; }
+  if (!list.length) { p.innerHTML = ""; return; }
+  const known = new Set([...S.boucles.values()].map(b => norm(b.numero || b.id)));
+  const dup = list.filter(n => known.has(n)).length, nw = list.length - dup;
+  p.innerHTML = `${list.length > 1 ? `De ${tagHTML(list[0])} à ${tagHTML(list[list.length - 1])}` : tagHTML(list[0])} : <b>${nw}</b> boucle${nw > 1 ? "s" : ""} à ajouter${dup ? ` <span class="muted">(${dup} déjà en stock, ignorée${dup > 1 ? "s" : ""})</span>` : ""}.`;
+}
+async function saveTags() {
+  const list = tagsList();
+  if (!list || !list.length) return toast("Vérifiez le premier numéro (FR suivi de 10 chiffres) et le nombre de boucles.");
+  const known = new Set([...S.boucles.values()].map(b => norm(b.numero || b.id))), today = todayISO();
+  const items = list.filter(n => !known.has(n)).map(n => ({col: "boucles", id: n, data: {numero: n, statut: "Disponible", ajoutLe: today}}));
+  if (!items.length) return toast("Ces boucles sont déjà toutes dans le stock.");
+  try { await Store.write(items); toast(`${items.length} boucle${items.length > 1 ? "s ajoutées" : " ajoutée"} au stock.`); closeDlg(); } catch (e) { handleErr(e); }
+}
+function tagMenu(id) {
+  const b = S.boucles.get(id); if (!b) return closeDlg();
+  const n = norm(b.numero || id), x = stockState().used.find(y => y.b.id === id), u = x && x.u, lost = b.statut === "Perdue";
+  const etat = u ? (u.a ? `Utilisée par ${esc(animalLabel(u.a))}.` : `Utilisée lors du vêlage de ${esc(animalLabel(S.animaux.get(u.e.animal)))} le ${fmtD(u.e.date)}.`)
+    : lost ? `Marquée perdue ou abîmée${b.perdueLe ? ` le ${fmtD(b.perdueLe)}` : ""}.` : `Disponible${b.ajoutLe ? `, ajoutée au stock le ${fmtD(b.ajoutLe)}` : ""}.`;
+  openDlg(`<div class="dlg-head"><div class="row">${tagHTML(n, true)}</div><button class="close" data-act="close" aria-label="Fermer">×</button></div>
+  <div class="dlg-body"><p style="margin:0">${etat}</p></div>
+  <div class="dlg-foot">${readOnly ? "" : `<button class="btn danger" data-act="tag-delete" data-id="${esc(id)}">Supprimer du stock</button><span style="flex:1"></span>`}
+    ${u && u.a ? `<button class="btn primary" data-act="open-animal" data-id="${esc(u.a.id)}">Voir l'animal</button>`
+      : readOnly || u ? "" : lost ? `<button class="btn primary" data-act="tag-restock" data-id="${esc(id)}">Remettre en stock</button>`
+      : `<button class="btn" data-act="tag-lost" data-id="${esc(id)}">Perdue / abîmée</button>`}</div>`);
+}
+async function tagSet(id, change, msg) {
+  const b = S.boucles.get(id); if (!b) return;
+  const d = {...b, ...change}; delete d.id; Object.keys(d).forEach(k => d[k] === undefined && delete d[k]);
+  try { await put("boucles", id, d); toast(msg); closeDlg(); } catch {}
+}
+
 /* ---- reproduction ---- */
 function vRepro() {
   const today = todayISO();
   const fem = presents().filter(a => D.get(a.id).repro);
-  if (!fem.length) return `<h2>Reproduction</h2><div class="panel empty"><h3>Aucune femelle reproductrice</h3><p>Les vaches et génisses présentes apparaîtront ici avec leur état de gestation.</p></div>`;
+  if (!fem.length) return `<h2>Reproduction</h2>${stockPanel()}<div class="panel empty"><h3>Aucune femelle reproductrice</h3><p>Les vaches et génisses présentes apparaîtront ici avec leur état de gestation.</p></div>`;
   const gest = fem.filter(a => D.get(a.id).velagePrevu).sort((a,b)=>D.get(a.id).velagePrevu.localeCompare(D.get(b.id).velagePrevu));
   const diag = fem.filter(a => D.get(a.id).aDiagnostiquer);
   const vides = fem.filter(a => D.get(a.id).repro === "Vide").sort((a,b)=>(D.get(b.id).joursVide||0)-(D.get(a.id).joursVide||0));
@@ -375,6 +468,7 @@ function vRepro() {
     <div class="kpi"><b>${vAn.length ? Math.round(diff/vAn.length*100) : 0}%</b><span>Vêlages difficiles</span></div>
     <div class="kpi"><b>${vAn.length ? Math.round(morts/vAn.length*100) : 0}%</b><span>Mortinatalité</span></div>
   </div>
+  ${stockPanel()}
   <section class="panel"><h3>Vêlages prévus</h3><p class="hint">Terme calculé à ${GESTATION} jours après la dernière saillie ou IA.</p>
   ${gest.length ? `<div class="tablebox"><table><thead><tr><th class="first">Animal</th><th>Nom</th><th>Catégorie</th><th>État</th><th>IA / saillie</th><th>Taureau</th><th>Terme</th><th class="n">Jours</th></tr></thead><tbody>${gest.map(a=>{const d=D.get(a.id);const j=days(today,d.velagePrevu);return row(a,`<td>${reproPill(d)}</td><td>${fmtD(d.dateIA)}</td><td>${esc(d.taureau||"")}</td><td>${fmtD(d.velagePrevu)}</td><td class="n">${j<=7?`<span class="pill ${j<0?"crit":"warn"}">${j}</span>`:j}</td>`);}).join("")}</tbody></table></div>` : `<p class="muted">Aucune gestation en cours.</p>`}</section>
   <div class="grid2">
@@ -537,7 +631,7 @@ function animalForm(id) {
   <form id="fAnimal" data-id="${esc(id || "")}">
   <div class="dlg-head"><h3>${id ? "Modifier l'animal" : "Nouvel animal"}</h3><button type="button" class="close" data-act="close" aria-label="Fermer">×</button></div>
   <div class="dlg-body"><div class="form">
-    ${fld("numero","N° national *", inp("numero", a.numero, "text", 'required placeholder="FR 12 3456 7890" autocomplete="off"'))}
+    ${fld("numero","N° national *", inp("numero", a.numero, "text", 'required placeholder="FR 12 3456 7890" autocomplete="off"' + (id ? "" : ' list="dlBoucles"')) + (id ? "" : dlBoucles()))}
     ${fld("nom","Nom", inp("nom", a.nom))}
     ${fld("sexe","Sexe", `<select id="sexe" name="sexe">${opt(["F","M"], a.sexe)}</select>`)}
     ${fld("race","Race", inp("race", a.race, "text", 'list="dlRaces"') + `<datalist id="dlRaces">${races.map(r=>`<option value="${esc(r)}">`).join("")}</datalist>`)}
@@ -584,8 +678,10 @@ function eventForm({animalIds = [], type = "Pesée"} = {}) {
 }
 function evFields(type) {
   const fs = (EV[type] || {f:[]}).f;
-  let h = fs.map(([k, l, t, o]) => fld("ef_" + k, l, t === "select" ? `<select id="ef_${k}" name="${k}">${opt(o, o[0])}</select>` : `<input id="ef_${k}" name="${k}" type="${t}" ${t==="number"?'min="0" step="any"':""}>`)).join("");
-  if (type === "Vêlage") h += `<p class="hint full" style="grid-column:1/-1;margin:0">Si vous saisissez le numéro d'un veau vivant, il est ajouté automatiquement au troupeau avec sa mère et son père.</p>`;
+  let h = fs.map(([k, l, t, o]) => k === "veauNumero" ? fld("ef_" + k, l, `<input id="ef_veauNumero" name="veauNumero" type="text" list="dlBoucles" autocomplete="off" placeholder="FR 12 0123 4567" value="${esc(nextTag())}">${dlBoucles()}`) : fld("ef_" + k, l, t === "select" ? `<select id="ef_${k}" name="${k}">${opt(o, o[0])}</select>` : `<input id="ef_${k}" name="${k}" type="${t}" ${t==="number"?'min="0" step="any"':""}>`)).join("");
+  if (type === "Vêlage") { const nd = stockState().dispo.length;
+    h += `<p class="hint full" style="grid-column:1/-1;margin:0">Si vous saisissez le numéro d'un veau vivant, il est ajouté automatiquement au troupeau avec sa mère et son père.</p>`;
+    h += `<p class="hint full" style="grid-column:1/-1;margin:0">${nd ? `Numéro proposé : la prochaine boucle libre du stock (${nd} disponible${nd > 1 ? "s" : ""}). Effacez-le si le veau n'est pas bouclé, ou scannez sa boucle.` : `Astuce : enregistrez vos boucles dans Reproduction → « Boucles pour les veaux » pour qu'elles soient proposées ici.`}</p>`; }
   if (type === "Traitement") h += `<p class="hint" style="grid-column:1/-1;margin:0">Le délai d'attente bloque l'animal dans les alertes jusqu'à sa date de fin.</p>`;
   return h;
 }
@@ -910,7 +1006,7 @@ async function exportCSV() {
 }
 
 /* ---------- application installable, mises à jour ---------- */
-const APP_VERSION = "1.1.1";
+const APP_VERSION = "1.2.0";
 let swWaiting = null, installEvt = null, localN = 0;
 if ("serviceWorker" in navigator && location.protocol !== "file:") {
   window.addEventListener("load", () => {
@@ -1072,6 +1168,7 @@ function parseBackup(o) {
     for (const [k, v] of entries) { if (k == null || k === "" || !v || typeof v !== "object" || Array.isArray(v)) continue; const {id, ...r} = v; m.set(String(k), r); }
     out[c] = m;
   }
+  out.present = new Set(COLS_DB.filter(c => o[c] && typeof o[c] === "object"));
   return out;
 }
 async function onRestoreFile(input) {
@@ -1082,7 +1179,7 @@ async function onRestoreFile(input) {
   const n = c => RESTORE[c].size;
   openDlg(`<div class="dlg-head"><h3>Restaurer une sauvegarde</h3><button class="close" data-act="close" aria-label="Fermer">×</button></div>
   <div class="dlg-body">
-    <p style="margin:0">Le fichier <b>${esc(file.name)}</b>${o.exporteLe ? ` (exporté le ${fmtD(String(o.exporteLe).slice(0, 10))})` : ""} contient <b>${n("animaux")}</b> animaux, <b>${n("evenements")}</b> évènements et <b>${n("finances")}</b> opérations.</p>
+    <p style="margin:0">Le fichier <b>${esc(file.name)}</b>${o.exporteLe ? ` (exporté le ${fmtD(String(o.exporteLe).slice(0, 10))})` : ""} contient <b>${n("animaux")}</b> animaux, <b>${n("evenements")}</b> évènements et <b>${n("finances")}</b> opérations${n("boucles") ? ` et <b>${n("boucles")}</b> boucles en stock` : ""}.</p>
     ${o.version > 1 ? `<p class="hint" style="margin:0">Cette sauvegarde vient d'une version plus récente de l'application ; les informations connues seront restaurées.</p>` : ""}
     <label class="row"><input type="radio" name="restMode" id="restMerge" checked> Fusionner : ajouter et mettre à jour, sans rien supprimer</label>
     <label class="row"><input type="radio" name="restMode" id="restReplace"> Remplacer : le registre actuel (${S.animaux.size} animaux) est remplacé par la sauvegarde</label>
@@ -1094,7 +1191,7 @@ async function doRestore() {
   const replace = !!$("#restReplace")?.checked, items = [];
   for (const c of COLS_DB) {
     for (const [id, d] of RESTORE[c]) items.push({col: c, id, data: d});
-    if (replace) for (const [id, v] of S[c]) if (!RESTORE[c].has(id)) { const {id: _, ...r} = v; items.push({col: c, id, data: r, deleted: true}); }
+    if (replace && RESTORE.present.has(c)) for (const [id, v] of S[c]) if (!RESTORE[c].has(id)) { const {id: _, ...r} = v; items.push({col: c, id, data: r, deleted: true}); }
   }
   try {
     for (let i = 0; i < items.length; i += 300) { if (btn) btn.textContent = `Restauration… ${Math.min(i + 300, items.length)} / ${items.length}`; await Store.write(items.slice(i, i + 300)); }
@@ -1111,6 +1208,11 @@ function handleScan(raw) {
   const found = [...S.animaux.values()].filter(x => norm(x.numero).replace(/\D/g, "").slice(-10) === last10)
     .sort((x, y) => ((x.statut || "Présent") === "Présent" ? 0 : 1) - ((y.statut || "Présent") === "Présent" ? 0 : 1));
   const a = found[0];
+  const vn = dlg.open && $("#ef_veauNumero");
+  if (!a && vn) {
+    const t = [...S.boucles.values()].map(b => norm(b.numero || b.id)).find(n => n.replace(/\D/g, "").slice(-10) === last10) || "FR" + last10;
+    vn.value = t; toast(`N° du veau : ${t}`); return;
+  }
   if (!a) { toast(`Boucle lue (…${last10}) : aucun animal du registre ne porte ce numéro.`); return; }
   if (dlg.open && $("#fWeigh")) {
     const w = document.getElementById("w_" + a.id);
@@ -1176,6 +1278,12 @@ document.addEventListener("click", e => {
     case "import": IMP = null; importDlg(); break;
     case "do-import": runImport(); break;
     case "account": accountDlg(); break;
+    case "add-tags": addTagsForm(); break;
+    case "tag-menu": tagMenu(id); break;
+    case "tag-lost": tagSet(id, {statut: "Perdue", perdueLe: todayISO()}, "Boucle marquée perdue."); break;
+    case "tag-restock": tagSet(id, {statut: "Disponible", perdueLe: undefined}, "Boucle remise en stock."); break;
+    case "tag-delete": del("boucles", id).then(() => { toast("Boucle supprimée du stock."); closeDlg(); }).catch(() => {}); break;
+    case "goto-view": view = t.dataset.v; try { history.replaceState(null, "", "#" + view); } catch {} selected.clear(); schedule(); setTimeout(() => { const el = $("#stock"); if (el) el.scrollIntoView({block: "start"}); }, 80); break;
     case "show-login": closeDlg(); Store.showLogin(); break;
     case "sign-up": onLogin($("#fLogin"), true); break;
     case "reset-pw": { const em = $("#loginEmail")?.value.trim(), msg = $("#loginMsg");
@@ -1210,6 +1318,7 @@ let qT;
 document.addEventListener("input", e => {
   const t = e.target;
   if (t.id === "q") { UI.f.q = t.value; clearTimeout(qT); qT = setTimeout(() => { saveUI(); const pos = t.selectionStart; render(); const n = $("#q"); if (n) { n.focus(); try { n.setSelectionRange(pos, pos); } catch {} } }, 220); }
+  if (t.id === "tFirst" || t.id === "tCount") tagsPreview();
   if (t.id === "ageMin" || t.id === "ageMax") { UI.f[t.id] = t.value; clearTimeout(qT); qT = setTimeout(() => { saveUI(); render(); const n = $("#" + t.id); if (n) n.focus(); }, 400); }
 });
 document.addEventListener("change", e => {
@@ -1230,6 +1339,7 @@ document.addEventListener("change", e => {
 document.addEventListener("submit", e => {
   e.preventDefault(); const f = e.target;
   if (f.id === "fLogin") return onLogin(f, false);
+  if (f.id === "fTags") return saveTags();
   if (f.id === "fFarm") { const n = $("#farmName").value.trim(); if (!n) return; if (!navigator.onLine) return toast("Connexion internet nécessaire pour créer l'exploitation."); f.querySelectorAll("button").forEach(b => b.disabled = true); Store.createFarm(n).catch(err => { toast(err.message); f.querySelectorAll("button").forEach(b => b.disabled = false); }); return; }
   if (f.id === "fInvite") { const em = $("#invEmail").value.trim(), r = $("#invRole").value; Store.invite(em, r).then(() => { toast(`Invitation enregistrée pour ${em}.`); loadMembers(); inviteMail(em, r); }, err => toast(err.message)); return; }
   if (f.id === "fPw") { Store.updatePassword($("#newPw").value).then(() => { toast("Mot de passe modifié."); f.hidden = true; }, err => toast(err.message)); return; }

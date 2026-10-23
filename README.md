@@ -140,6 +140,17 @@ Vous pouvez à tout moment changer le rôle d'un membre ou le retirer (✕) depu
 
 Astuce Android : quand un clavier Bluetooth est connecté, le clavier de l'écran peut disparaître. Un appui long sur l'icône clavier dans la barre de notification permet de le réafficher.
 
+## Stock de boucles pour les veaux
+
+Onglet **Reproduction** → **Boucles pour les veaux** → **+ Ajouter des boucles** : saisissez le premier numéro de la série reçue de l'EDE (par ex. `FR 12 0123 8001`) et le nombre de boucles ; les numéros suivants sont calculés tout seuls (les boucles déjà en stock sont ignorées).
+
+- À chaque **vêlage**, le numéro du veau est **proposé automatiquement** : c'est la plus petite boucle libre du stock. Vous pouvez la changer, l'effacer si le veau n'est pas bouclé, ou **scanner** la boucle électronique du veau avec le lecteur.
+- Une boucle est comptée comme **utilisée** dès qu'un animal ou un vêlage porte son numéro (y compris après un import EDE) : rien à cocher.
+- Touchez une boucle pour la marquer **perdue / abîmée** (elle ne sera plus proposée) ou la supprimer du stock.
+- Le tableau de bord prévient quand il reste **moins de 5 boucles**.
+
+> Si l'exploitation a été créée avant l'arrivée du stock de boucles, la base Supabase doit être mise à jour une fois : **SQL Editor** → **New query** → collez de nouveau tout le fichier [`supabase/schema.sql`](supabase/schema.sql) → **Run**. Sans danger pour les données. En attendant, un bandeau l'indique et les boucles restent sur l'appareil.
+
 ## Sauvegardes
 
 **Compte** → **Exporter une sauvegarde** crée un fichier `ma-bete-AAAA-MM-JJ.json` avec tous les animaux, évènements et opérations. Gardez-en une copie de temps en temps (e-mail, clé USB).

@@ -37,11 +37,11 @@ create table if not exists public.farm_invitations (
 );
 create index if not exists farm_invitations_email_idx on public.farm_invitations (email);
 
--- Table unique des données du registre : animaux, évènements, finances.
+-- Table unique des données du registre : animaux, évènements, finances, stock de boucles.
 -- Suppression logique (deleted = true) pour que les autres appareils l'apprennent aussi.
 create table if not exists public.records (
   farm_id     uuid not null references public.farms (id) on delete cascade,
-  collection  text not null check (collection in ('animaux', 'evenements', 'finances')),
+  collection  text not null check (collection in ('animaux', 'evenements', 'finances', 'boucles')),
   id          text not null check (length(id) between 1 and 100),
   data        jsonb not null default '{}'::jsonb,
   deleted     boolean not null default false,
@@ -50,6 +50,11 @@ create table if not exists public.records (
   primary key (farm_id, collection, id)
 );
 create index if not exists records_farm_updated_idx on public.records (farm_id, updated_at);
+
+-- Mise à jour d'une base créée avec une version précédente : autorise la collection « boucles »
+alter table public.records drop constraint if exists records_collection_check;
+alter table public.records add constraint records_collection_check
+  check (collection in ('animaux', 'evenements', 'finances', 'boucles'));
 
 -- ---------- Fonctions utilitaires --------------------------------------
 
