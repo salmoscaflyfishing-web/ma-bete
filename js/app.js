@@ -102,15 +102,21 @@ function derive() {
     pts.sort((x, y) => x.date.localeCompare(y.date)); d.pesees = pts;
     if (pts.length) { const l = pts[pts.length-1]; d.poids = l.poids; d.datePesee = l.date;
       if (pts.length > 1) { const p = pts[pts.length-2]; const j = days(p.date, l.date); if (j > 0) d.gmq = Math.round((l.poids - p.poids) / j * 1000); } }
-    // reproduction
-    const velages = evs.filter(e => e.type === "Vêlage");
+    // reproduction : vêlages saisis + naissances de ses veaux connus (import EDE, saisie d'un veau)
+    // sans vêlage saisi ce jour-là ; des jumeaux nés le même jour comptent pour un seul vêlage
+    const velagesEv = evs.filter(e => e.type === "Vêlage");
+    const kids = a.sexe === "F" && a.numero ? (kidsByMere.get(norm(a.numero)) || []) : [];
+    const velDates = new Set(velagesEv.map(e => e.date)), naiss = [];
+    for (const k of kids) if (k.naissance && !velDates.has(k.naissance)) { velDates.add(k.naissance); naiss.push({type: "Vêlage", date: k.naissance, naissance: true}); }
+    const timeline = naiss.length ? [...evs, ...naiss].sort((x, y) => (x.date || "").localeCompare(y.date || "")) : evs;
+    const velages = timeline.filter((e, i, l) => e.type === "Vêlage" && !l.slice(0, i).some(x => x.type === "Vêlage" && x.date === e.date));
     d.nbVelages = velages.length;
     if (velages.length) d.dernierVelage = velages[velages.length-1].date;
     if (velages.length > 1) { let s = 0; for (let i = 1; i < velages.length; i++) s += days(velages[i-1].date, velages[i].date); d.ivv = Math.round(s / (velages.length - 1)); }
     if (a.sexe === "F") {
       let lv = null;
       for (const k of (kidsByMere.get(norm(a.numero)) || [])) if (k.naissance && (!lv || k.naissance > lv.date)) lv = {date:k.naissance, numero:norm(k.numero), nom:k.nom, sexe:k.sexe};
-      for (const e of velages) if (!lv || e.date >= lv.date) {
+      for (const e of velagesEv) if (!lv || e.date >= lv.date) {
         if (e.veauNumero) { const k = byNumero.get(norm(e.veauNumero)); lv = {date:e.date, numero:norm(e.veauNumero), nom:e.veauNom || k?.nom, sexe:e.veauSexe || k?.sexe}; }
         else if (e.veauEtat === "Mort-né") lv = {date:e.date, mortne:true};
       }
@@ -119,7 +125,7 @@ function derive() {
     const eligible = a.sexe === "F" && (a.categorie === "Vache" || a.categorie === "Génisse");
     if (eligible) {
       let st = "Vide", ia = null;
-      for (const e of evs) {
+      for (const e of timeline) {
         if (e.type === "Vêlage" || e.type === "Avortement") { st = "Vide"; ia = null; }
         else if (e.type === "Saillie / IA") { st = "Inséminée"; ia = e; }
         else if (e.type === "Diagnostic gestation") { st = e.resultat === "Positive" ? "Gestante" : "Vide"; if (st === "Vide") ia = null; }
@@ -1025,7 +1031,7 @@ async function exportCSV() {
 }
 
 /* ---------- application installable, mises à jour ---------- */
-const APP_VERSION = "1.2.1";
+const APP_VERSION = "1.2.2";
 let swWaiting = null, installEvt = null, localN = 0;
 if ("serviceWorker" in navigator && location.protocol !== "file:") {
   window.addEventListener("load", () => {
