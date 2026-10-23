@@ -190,4 +190,4 @@ dialog::backdrop{background:rgba(10,16,13,.55)}
 .auth hr{border:0;border-top:1px solid var(--line);margin:0;width:100%}
 tbody tr.scan td{background:var(--warn-bg)!important}
 label.btn input[type=file]{display:none}
-@media (max-width:560px){.brand small{display:none}.brand h1{font-size:1.25rem}}
+@media (max-width:560px){.brand small{font-size:.66rem;letter-spacing:.03em}.brand h1{font-size:1.3rem}}

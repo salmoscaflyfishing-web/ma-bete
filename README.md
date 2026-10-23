@@ -1,4 +1,6 @@
-# Registre du Troupeau 🐄
+# Ma Bête 🐄
+
+*Le carnet d'étable de votre troupeau.*
 
 Application de gestion de troupeau bovins viande : inventaire (colonnes au choix, filtres, tri par numéro de travail, « Dernier veau »), import de l'inventaire EDE, reproduction, santé et délais d'attente, pesées et GMQ, finances.
 
@@ -107,7 +109,7 @@ Ce réglage permet aux liens reçus par e-mail (confirmation de compte, mot de p
 1. Ouvrez **Chrome** sur le téléphone et allez sur l'adresse de l'application. Connectez-vous.
 2. Touchez le menu **⋮** (en haut à droite) → **Installer l'application** (ou **Ajouter à l'écran d'accueil** → **Installer**).
    Vous pouvez aussi passer par le menu **Compte** de l'application → **Installer l'application**.
-3. L'icône jaune **Troupeau** apparaît sur l'écran d'accueil. Elle s'ouvre en plein écran, comme une application normale.
+3. L'icône jaune **Ma Bête** apparaît sur l'écran d'accueil. Elle s'ouvre en plein écran, comme une application normale.
 4. Ouvrez-la une première fois avec du réseau : tout est alors gardé sur le téléphone, et elle s'ouvrira ensuite **même sans réseau** (en stabulation, au pré…).
 
 **Sur iPhone** : ouvrez l'adresse dans **Safari** → bouton **Partager** (carré avec une flèche) → **Sur l'écran d'accueil** → **Ajouter**.

@@ -910,7 +910,7 @@ async function exportCSV() {
 }
 
 /* ---------- application installable, mises à jour ---------- */
-const APP_VERSION = "1.0.0";
+const APP_VERSION = "1.1.0";
 let swWaiting = null, installEvt = null, localN = 0;
 if ("serviceWorker" in navigator && location.protocol !== "file:") {
   window.addEventListener("load", () => {
@@ -1048,8 +1048,8 @@ async function loadMembers() {
 }
 function inviteMail(email, role) {
   const url = location.origin + location.pathname;
-  const body = `Bonjour,\n\nJe vous invite au registre du troupeau de l'exploitation « ${Store.state.farmName} » (rôle : ${ROLES[role] || role}).\n\n1. Ouvrez ${url}\n2. Touchez « Créer un compte » avec cette adresse e-mail : ${email}\n3. Confirmez votre adresse avec le lien reçu par e-mail, puis connectez-vous.\n\nLe registre de l'exploitation apparaîtra automatiquement. Vous pouvez ensuite installer l'application depuis le menu du navigateur.\n`;
-  location.href = `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent("Invitation au Registre du Troupeau")}&body=${encodeURIComponent(body)}`;
+  const body = `Bonjour,\n\nJe vous invite sur Ma Bête, le carnet d'étable du troupeau de l'exploitation « ${Store.state.farmName} » (rôle : ${ROLES[role] || role}).\n\n1. Ouvrez ${url}\n2. Touchez « Créer un compte » avec cette adresse e-mail : ${email}\n3. Confirmez votre adresse avec le lien reçu par e-mail, puis connectez-vous.\n\nLe registre de l'exploitation apparaîtra automatiquement. Vous pouvez ensuite installer l'application depuis le menu du navigateur.\n`;
+  location.href = `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent("Invitation à Ma Bête")}&body=${encodeURIComponent(body)}`;
 }
 
 /* ---------- sauvegarde / restauration (fichier JSON) ---------- */
@@ -1078,7 +1078,7 @@ async function onRestoreFile(input) {
   const file = input.files && input.files[0]; if (!file) return;
   let o; try { o = JSON.parse((await file.text()).replace(/^﻿/, "")); } catch { return toast("Ce fichier n'est pas une sauvegarde lisible (JSON invalide)."); }
   RESTORE = parseBackup(o);
-  if (!RESTORE) return toast("Ce fichier n'est pas une sauvegarde du Registre du Troupeau.");
+  if (!RESTORE) return toast("Ce fichier n'est pas une sauvegarde de Ma Bête.");
   const n = c => RESTORE[c].size;
   openDlg(`<div class="dlg-head"><h3>Restaurer une sauvegarde</h3><button class="close" data-act="close" aria-label="Fermer">×</button></div>
   <div class="dlg-body">

@@ -1,7 +1,7 @@
 {
-  "name": "Registre du Troupeau",
-  "short_name": "Troupeau",
-  "description": "Registre de troupeau bovins viande : inventaire, reproduction, santé, pesées et finances. Fonctionne hors ligne.",
+  "name": "Ma Bête – le carnet d'étable de votre troupeau",
+  "short_name": "Ma Bête",
+  "description": "Le carnet d'étable de votre troupeau : inventaire, reproduction, santé, pesées et finances. Fonctionne hors ligne.",
   "lang": "fr",
   "id": "./",
   "start_url": "./",
