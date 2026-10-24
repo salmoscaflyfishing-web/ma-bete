@@ -41,10 +41,6 @@ const EV = {
   "Note": {g:"note", f:[]},
 };
 const BULK_OK = ["Traitement","Vaccination","Saillie / IA","Chaleur","Note"];
-const FIN_CAT = {
-  "Recette": ["Vente animaux","Aides PAC","Prime / aide couplée","Vente fourrage","Autres recettes"],
-  "Dépense": ["Aliments et minéraux","Vétérinaire et santé","Reproduction (IA)","Achat animaux","Paille et litière","Carburant et matériel","Fermages","Identification / EDE","Autres dépenses"],
-};
 
 /* ---------- stockage (IndexedDB sur l'appareil + synchronisation, voir store.js) ---------- */
 const S = Store.S;
@@ -216,12 +212,11 @@ const UI = ls.get("registre-ui-v1", null) || {};
 UI.cols = UI.cols || DEFAULT_COLS.slice();
 UI.f = UI.f || {q:"", statut:["Présent"], sexe:[], categorie:[], race:[], lot:[], repro:[], delai:[], ageMin:"", ageMax:""};
 UI.sort = UI.sort || {k:"numero", dir:1};
-UI.finYear = UI.finYear || new Date().getFullYear();
 UI.santeYear = UI.santeYear || "Toutes";
 if ((UI.v || 1) < 3) { for (const k of ["ageJours", "ageAns"]) if (!UI.cols.includes(k)) { const i = UI.cols.indexOf("age"); UI.cols.splice(i >= 0 ? i + 1 : UI.cols.length, 0, k); } }
 if ((UI.v || 1) < 2) { if (!UI.cols.includes("dernierVeau")) { const i = UI.cols.indexOf("repro"); UI.cols.splice(i >= 0 ? i + 1 : UI.cols.length, 0, "dernierVeau"); } UI.v = 2; }
 if (UI.v < 3) UI.v = 3;
-const saveUI = () => ls.set("registre-ui-v1", {v:UI.v, cols:UI.cols, f:UI.f, sort:UI.sort, finYear:UI.finYear, santeYear:UI.santeYear});
+const saveUI = () => ls.set("registre-ui-v1", {v:UI.v, cols:UI.cols, f:UI.f, sort:UI.sort, santeYear:UI.santeYear});
 let selected = new Set();
 let view = "tableau";
 
@@ -243,7 +238,7 @@ function render() {
   if (!allLoaded) { app.innerHTML = `<div class="loading">Chargement du registre…</div>`; renderBulk(); return; }
   derive();
   const keepScroll = $(".tablebox")?.scrollLeft;
-  app.innerHTML = banners() + ({tableau:vTableau, animaux:vAnimaux, repro:vRepro, sante:vSante, pesees:vPesees, finances:vFinances}[view] || vTableau)();
+  app.innerHTML = banners() + ({tableau:vTableau, animaux:vAnimaux, repro:vRepro, sante:vSante, pesees:vPesees}[view] || vTableau)();
   if (keepScroll && $(".tablebox")) $(".tablebox").scrollLeft = keepScroll;
   renderBulk();
 }
@@ -380,8 +375,6 @@ function vTableau() {
   const gest = fem.filter(a => ["Gestante","Inséminée"].includes(D.get(a.id).repro)).length;
   const yr = String(new Date().getFullYear());
   const velAn = velagesAnnee(yr);
-  const fin = [...S.finances.values()].filter(f => (f.date || "").startsWith(yr));
-  const solde = fin.reduce((s, f) => s + (f.sens === "Recette" ? 1 : -1) * (+f.montant || 0), 0);
   const alerts = buildAlerts();
   const max = Math.max(1, ...Object.values(byCat));
   const recent = [...S.evenements.values()].sort((a, b) => (b.date || "").localeCompare(a.date || "")).slice(0, 8);
@@ -392,7 +385,6 @@ function vTableau() {
     <div class="kpi"><b>${byCat["Vache"] || 0}</b><span>Vaches</span></div>
     <div class="kpi"><b>${gest}<small class="muted" style="font-size:.5em"> / ${fem.length}</small></b><span>Gestantes ou IA</span></div>
     <div class="kpi"><b>${velAn}</b><span>Vêlages ${yr}</span></div>
-    <div class="kpi"><b style="color:${solde < 0 ? "var(--crit)" : "var(--ok)"}">${fmtN(solde)}&nbsp;€</b><span>Solde ${yr}</span></div>
   </div>
   ${vieillesPanel()}
   ${edePanel()}
@@ -644,50 +636,6 @@ function vPesees() {
   <section class="panel"><h3>Dernières pesées</h3>${list.length ? `<div class="tablebox"><table><thead><tr><th class="first">Animal</th><th>Nom</th><th>Lot</th><th class="n">Âge (mois)</th><th>Date</th><th class="n">Poids (kg)</th><th class="n">GMQ (g/j)</th></tr></thead><tbody>${list.map(a=>{const d=D.get(a.id);return `<tr data-act="open-animal" data-id="${esc(a.id)}"><td class="first">${tagHTML(a.numero)}</td><td>${esc(a.nom||"")}</td><td>${esc(a.lot||"")}</td><td class="n">${fmtN(d.age)}</td><td>${fmtD(d.datePesee)}</td><td class="n">${fmtN(d.poids)}</td><td class="n">${fmtN(d.gmq)}</td></tr>`;}).join("")}</tbody></table></div>` : `<div class="empty"><h3>Aucune pesée</h3><p>Lancez une séance de pesée pour saisir les poids d'un lot d'un coup.</p></div>`}</section>`;
 }
 
-/* ---- finances ---- */
-function vFinances() {
-  const all = [...S.finances.values()];
-  const years = [...new Set([new Date().getFullYear(), ...all.map(f => +(f.date||"").slice(0,4)).filter(Boolean)])].sort((a,b)=>b-a);
-  const y = String(UI.finYear);
-  const list = all.filter(f => (f.date||"").startsWith(y)).sort((a,b)=>b.date.localeCompare(a.date));
-  const rec = list.filter(f=>f.sens==="Recette").reduce((s,f)=>s+(+f.montant||0),0);
-  const dep = list.filter(f=>f.sens!=="Recette").reduce((s,f)=>s+(+f.montant||0),0);
-  const cats = {}; list.forEach(f => { const k = (f.sens==="Recette"?"+ ":"− ") + (f.categorie||"Autre"); cats[k] = (cats[k]||0) + (+f.montant||0); });
-  const cmax = Math.max(1, ...Object.values(cats));
-  const months = Array.from({length:12}, (_, i) => { const m = `${y}-${pad(i+1)}`; const l = list.filter(f => f.date.startsWith(m));
-    return [l.filter(f=>f.sens==="Recette").reduce((s,f)=>s+(+f.montant||0),0), l.filter(f=>f.sens!=="Recette").reduce((s,f)=>s+(+f.montant||0),0)]; });
-  const ventes = list.filter(f=>f.sens==="Recette"&&f.categorie==="Vente animaux"&&f.animal);
-  const nbVaches = presents().filter(a=>a.categorie==="Vache").length;
-  return `
-  <div class="spread"><h2>Finances</h2><div class="row">
-    <select id="finYear" class="search" style="flex:none;min-width:0" aria-label="Année">${years.map(v=>`<option ${String(v)===y?"selected":""}>${v}</option>`).join("")}</select>
-    ${readOnly?"":`<button class="btn primary" data-act="new-fin">+ Opération</button>`}</div></div>
-  <div class="kpis">
-    <div class="kpi"><b style="color:var(--ok)">${fmtN(rec)}&nbsp;€</b><span>Recettes ${y}</span></div>
-    <div class="kpi"><b style="color:var(--crit)">${fmtN(dep)}&nbsp;€</b><span>Dépenses ${y}</span></div>
-    <div class="kpi"><b>${fmtN(rec-dep)}&nbsp;€</b><span>Solde</span></div>
-    <div class="kpi"><b>${nbVaches ? fmtN((rec-dep)/nbVaches) : "—"}&nbsp;€</b><span>Solde par vache</span></div>
-    <div class="kpi"><b>${ventes.length ? fmtN(ventes.reduce((s,f)=>s+(+f.montant||0),0)/ventes.length) : "—"}&nbsp;€</b><span>Prix moyen / animal vendu</span></div>
-  </div>
-  <div class="grid2">
-  <section class="panel"><div class="spread"><h3>Par mois</h3><div class="legend"><span><i style="background:var(--ok)"></i>Recettes</span><span><i style="background:var(--crit)"></i>Dépenses</span></div></div>${monthChart(months)}</section>
-  <section class="panel"><h3>Par catégorie</h3>${Object.keys(cats).length ? `<div class="bars">${Object.entries(cats).sort((a,b)=>b[1]-a[1]).map(([c,v])=>`<div class="bar ${c[0]==="−"?"neg":""}"><span>${esc(c)}</span><span class="tr"><i style="width:${v/cmax*100}%;${c[0]==="+"?"background:var(--ok)":""}"></i></span><b class="num" style="text-align:right;font-size:.85rem">${fmtN(v/1000,1)}k</b></div>`).join("")}</div>` : `<p class="muted">Aucune opération cette année.</p>`}</section>
-  </div>
-  <section class="panel"><h3>Opérations ${y}</h3>${list.length ? `<div class="tablebox"><table><thead><tr><th class="first">Date</th><th>Sens</th><th>Catégorie</th><th>Libellé</th><th>Animal</th><th class="n">Montant</th><th></th></tr></thead><tbody>${list.map(f=>{const a=f.animal&&S.animaux.get(f.animal);return `<tr data-act="edit-fin" data-id="${esc(f.id)}"><td class="first">${fmtD(f.date)}</td><td><span class="pill ${f.sens==="Recette"?"ok":"crit"}">${esc(f.sens||"Dépense")}</span></td><td>${esc(f.categorie||"")}</td><td>${esc(f.libelle||"")}</td><td>${a?tagHTML(a.numero):""}</td><td class="n">${f.sens==="Recette"?"":"− "}${fmtN(f.montant,2)} €</td><td class="muted">›</td></tr>`;}).join("")}</tbody></table></div>` : `<div class="empty"><h3>Aucune opération en ${y}</h3><p>Saisissez vos ventes, achats et aides pour suivre le solde de l'atelier.</p></div>`}</section>`;
-}
-function monthChart(m) {
-  const W = 560, H = 200, L = 44, B = 22, T = 8, max0 = Math.max(1, ...m.flat());
-  const step = Math.pow(10, Math.floor(Math.log10(max0))); let max = Math.ceil(max0 / step) * step; const ticks = 4;
-  const sy = v => T + (H - T - B) * (1 - v / max), bw = (W - L) / 12;
-  let s = `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Recettes et dépenses par mois">`;
-  for (let i = 0; i <= ticks; i++) { const v = max * i / ticks, yy = sy(v); s += `<line x1="${L}" x2="${W}" y1="${yy}" y2="${yy}" stroke="var(--line)" stroke-width="1"/><text x="${L-6}" y="${yy+4}" text-anchor="end">${v>=1000?fmtN(v/1000,v%1000?1:0)+"k":fmtN(v)}</text>`; }
-  m.forEach(([r, d], i) => { const x = L + i * bw + bw * .15, w = bw * .33;
-    if (r) s += `<rect x="${x}" y="${sy(r)}" width="${w}" height="${H-B-sy(r)}" fill="var(--ok)" rx="1.5"><title>${MOIS[i]} recettes ${fmtE(r)}</title></rect>`;
-    if (d) s += `<rect x="${x+w+1}" y="${sy(d)}" width="${w}" height="${H-B-sy(d)}" fill="var(--crit)" rx="1.5"><title>${MOIS[i]} dépenses ${fmtE(d)}</title></rect>`;
-    s += `<text x="${L + i*bw + bw/2}" y="${H-6}" text-anchor="middle">${MOIS[i]}</text>`; });
-  return s + `</svg>`;
-}
-
 /* ---------- évènements (affichage) ---------- */
 function evDetail(e) {
   const p = [];
@@ -783,7 +731,7 @@ function animalForm(id) {
     ${fld("motifSortie","Motif de sortie", inp("motifSortie", a.motifSortie, "text", 'placeholder="Vente broutard, abattoir, réforme…"'))}
     ${fld("prixVente","Prix de vente (€)", inp("prixVente", a.prixVente, "number", 'min="0" step="1"'))}
     ${fld("notes","Notes", `<textarea id="notes" name="notes">${esc(a.notes || "")}</textarea>`, true)}
-  </div>${!id || !a.venteFinId ? `<p class="hint">Un prix de vente crée automatiquement la recette correspondante dans Finances.</p>` : ""}</div>
+  </div></div>
   <div class="dlg-foot"><button type="button" class="btn" data-act="${id ? "back-animal" : "close"}" data-id="${esc(id||"")}">Annuler</button><button class="btn primary" type="submit">Enregistrer</button></div>
   </form>`);
 }
@@ -839,24 +787,6 @@ function weighSession() {
   </form>`);
 }
 
-function finForm(id) {
-  const f = id ? S.finances.get(id) : {sens:"Dépense", date: todayISO()};
-  const sens = f.sens || "Dépense";
-  openDlg(`
-  <form id="fFin" data-id="${esc(id || "")}">
-  <div class="dlg-head"><h3>${id ? "Modifier l'opération" : "Nouvelle opération"}</h3><button type="button" class="close" data-act="close" aria-label="Fermer">×</button></div>
-  <div class="dlg-body"><div class="form">
-    ${fld("fSens","Sens", `<select id="fSens" name="sens">${opt(["Dépense","Recette"], sens)}</select>`)}
-    ${fld("fDate","Date", inp("fDate", f.date, "date", "required"))}
-    ${fld("fCat","Catégorie", `<input id="fCat" name="categorie" list="dlCat" value="${esc(f.categorie || "")}" required><datalist id="dlCat">${[...FIN_CAT.Recette, ...FIN_CAT["Dépense"]].map(c=>`<option value="${esc(c)}">`).join("")}</datalist>`)}
-    ${fld("fMontant","Montant (€) *", inp("fMontant", f.montant, "number", 'min="0" step="0.01" required inputmode="decimal"'))}
-    ${fld("fLib","Libellé", inp("fLib", f.libelle, "text", 'placeholder="Fournisseur, acheteur, n° de facture…"'), true)}
-    ${fld("fAnimal","Animal concerné", `<select id="fAnimal"><option value="">Aucun</option>${[...S.animaux.values()].map(a=>`<option value="${esc(a.id)}" ${f.animal===a.id?"selected":""}>${esc(animalLabel(a))}</option>`).join("")}</select>`, true)}
-  </div></div>
-  <div class="dlg-foot">${id ? `<button type="button" class="btn danger" data-act="del-fin" data-id="${esc(id)}">Supprimer</button><span style="flex:1"></span>` : ""}<button type="button" class="btn" data-act="close">Annuler</button><button class="btn primary" type="submit">Enregistrer</button></div>
-  </form>`);
-}
-
 function confirmDlg(title, text, act, id, label) {
   openDlg(`<div class="dlg-head"><h3>${esc(title)}</h3><button class="close" data-act="close" aria-label="Fermer">×</button></div>
   <div class="dlg-body"><p style="margin:0">${text}</p></div>
@@ -880,10 +810,6 @@ async function saveAnimal(form) {
   if (a.statut !== "Présent" && !a.dateSortie) a.dateSortie = todayISO();
   delete a.id; if (a.poidsNaissance === undefined) delete a.poidsNaissance; if (a.prixVente === undefined) delete a.prixVente;
   try {
-    if (a.prixVente && !a.venteFinId) {
-      const fid = newId(); a.venteFinId = fid;
-      await put("finances", fid, {date: a.dateSortie || todayISO(), sens:"Recette", categorie:"Vente animaux", montant: a.prixVente, libelle:`Vente ${a.nom || numero.slice(-4)}${a.motifSortie ? " – " + a.motifSortie : ""}`, animal: id});
-    }
     await put("animaux", id, a);
     toast(form.dataset.id ? "Fiche enregistrée" : "Animal ajouté");
     showAnimal(id);
@@ -922,14 +848,7 @@ async function saveWeigh(form) {
   try { for (const i of inputs) await put("evenements", newId(), {type:"Pesée", date, poids:+i.value, animal:i.dataset.wid}); toast(`${inputs.length} pesée${inputs.length>1?"s":""} enregistrée${inputs.length>1?"s":""}`); closeDlg(); } catch {}
 }
 
-async function saveFin(form) {
-  const id = form.dataset.id || newId();
-  const f = {date: $("#fDate").value, sens: $("#fSens").value, categorie: $("#fCat").value.trim(), montant: +$("#fMontant").value, libelle: $("#fLib").value.trim()};
-  const an = $("#fAnimal").value; if (an) f.animal = an;
-  const old = S.finances.get(id); if (old?.exemple) f.exemple = true;
-  if (!(f.montant > 0)) return toast("Indiquez un montant supérieur à zéro.");
-  try { await put("finances", id, f); toast("Opération enregistrée"); closeDlg(); } catch {}
-}
+
 
 async function deleteAnimal(id) {
   const evs = evByAnimal.get(id) || [];
@@ -1144,7 +1063,7 @@ async function exportCSV() {
 }
 
 /* ---------- application installable, mises à jour ---------- */
-const APP_VERSION = "1.4.0";
+const APP_VERSION = "1.5.0";
 let swWaiting = null, installEvt = null, localN = 0;
 if ("serviceWorker" in navigator && location.protocol !== "file:") {
   window.addEventListener("load", () => {
@@ -1250,7 +1169,7 @@ function accountDlg() {
     </section>
     ${cloud ? `<section class="fgroup"><span class="flabel">Membres de l'exploitation</span><div id="membersZone"><p class="muted" style="margin:0">Chargement…</p></div></section>` : ""}
     <section class="fgroup"><span class="flabel">Sauvegarde</span>
-      <p class="hint" style="margin:0">Un fichier contenant tous les animaux, évènements et opérations. Gardez-en régulièrement une copie (clé USB, e-mail…).</p>
+      <p class="hint" style="margin:0">Un fichier contenant tous les animaux, évènements et boucles en stock. Gardez-en régulièrement une copie (clé USB, e-mail…).</p>
       <div class="row"><button class="btn" data-act="backup-export">Exporter une sauvegarde</button>${readOnly ? "" : `<label class="btn" tabindex="0">Restaurer une sauvegarde<input type="file" id="restoreFile" accept=".json,application/json" hidden></label>`}</div>
     </section>
     <section class="fgroup"><span class="flabel">Application</span>
@@ -1291,7 +1210,7 @@ function exportBackup() {
   const o = {format: "registre-troupeau", version: 1, exporteLe: new Date().toISOString()};
   if (Store.state.farmName) o.exploitation = Store.state.farmName;
   COLS_DB.forEach(c => { o[c] = Object.fromEntries([...S[c]].map(([k, v]) => { const {id, ...r} = v; return [k, r]; })); });
-  try { download(`ma-bete-${todayISO()}.json`, JSON.stringify(o, null, 1), "application/json"); toast(`Sauvegarde exportée : ${S.animaux.size} animaux, ${S.evenements.size} évènements, ${S.finances.size} opérations.`); }
+  try { download(`ma-bete-${todayISO()}.json`, JSON.stringify(o, null, 1), "application/json"); toast(`Sauvegarde exportée : ${S.animaux.size} animaux, ${S.evenements.size} évènements, ${S.boucles.size} boucles.`); }
   catch { toast("Export impossible sur cet appareil."); }
 }
 let RESTORE = null;
@@ -1317,7 +1236,7 @@ async function onRestoreFile(input) {
   const n = c => RESTORE[c].size;
   openDlg(`<div class="dlg-head"><h3>Restaurer une sauvegarde</h3><button class="close" data-act="close" aria-label="Fermer">×</button></div>
   <div class="dlg-body">
-    <p style="margin:0">Le fichier <b>${esc(file.name)}</b>${o.exporteLe ? ` (exporté le ${fmtD(String(o.exporteLe).slice(0, 10))})` : ""} contient <b>${n("animaux")}</b> animaux, <b>${n("evenements")}</b> évènements et <b>${n("finances")}</b> opérations${n("boucles") ? ` et <b>${n("boucles")}</b> boucles en stock` : ""}.</p>
+    <p style="margin:0">Le fichier <b>${esc(file.name)}</b>${o.exporteLe ? ` (exporté le ${fmtD(String(o.exporteLe).slice(0, 10))})` : ""} contient <b>${n("animaux")}</b> animaux, <b>${n("evenements")}</b> évènements${n("boucles") ? ` et <b>${n("boucles")}</b> boucles en stock` : ""}.</p>
     ${o.version > 1 ? `<p class="hint" style="margin:0">Cette sauvegarde vient d'une version plus récente de l'application ; les informations connues seront restaurées.</p>` : ""}
     <label class="row"><input type="radio" name="restMode" id="restMerge" checked> Fusionner : ajouter et mettre à jour, sans rien supprimer</label>
     <label class="row"><input type="radio" name="restMode" id="restReplace"> Remplacer : le registre actuel (${S.animaux.size} animaux) est remplacé par la sauvegarde</label>
@@ -1333,7 +1252,7 @@ async function doRestore() {
   }
   try {
     for (let i = 0; i < items.length; i += 300) { if (btn) btn.textContent = `Restauration… ${Math.min(i + 300, items.length)} / ${items.length}`; await Store.write(items.slice(i, i + 300)); }
-    toast(`Sauvegarde restaurée : ${RESTORE.animaux.size} animaux, ${RESTORE.evenements.size} évènements, ${RESTORE.finances.size} opérations.`);
+    toast(`Sauvegarde restaurée : ${RESTORE.animaux.size} animaux, ${RESTORE.evenements.size} évènements.`);
     RESTORE = null; closeDlg();
   } catch (e) { handleErr(e); if (btn) btn.disabled = false; }
 }
@@ -1397,15 +1316,11 @@ document.addEventListener("click", e => {
     case "bulk-event": eventForm({animalIds: [...selected], type: "Traitement"}); break;
     case "clear-sel": selected.clear(); schedule(); break;
     case "weigh-session": weighSession(); break;
-    case "new-fin": finForm(); break;
-    case "edit-fin": if (!readOnly) finForm(id); break;
-    case "del-fin": confirmDlg("Supprimer l'opération ?", "Cette opération sera retirée des finances.", "do-del-fin", id, "Supprimer"); break;
-    case "do-del-fin": del("finances", id).then(() => { toast("Opération supprimée"); closeDlg(); }).catch(() => {}); break;
     case "del-event": { const ev = S.evenements.get(id); const aid = ev?.animal; del("evenements", id).then(() => { toast("Évènement supprimé"); if (aid) setTimeout(() => showAnimal(aid), 0); }).catch(() => {}); break; }
     case "ask-del-animal": { const a = S.animaux.get(id); const n = (evByAnimal.get(id) || []).length;
       confirmDlg("Supprimer cet animal ?", `${esc(animalLabel(a))} et ses ${n} évènement${n>1?"s":""} seront effacés définitivement. Pour un animal vendu ou mort, changez plutôt son statut afin de garder l'historique.`, "do-del-animal", id, "Supprimer définitivement"); break; }
     case "do-del-animal": deleteAnimal(id); break;
-    case "clear-examples": confirmDlg("Effacer les données d'exemple ?", "Tous les animaux, évènements et opérations marqués comme exemples seront supprimés. Vos propres saisies sont conservées.", "do-clear-examples", "", "Effacer les exemples"); break;
+    case "clear-examples": confirmDlg("Effacer les données d'exemple ?", "Tous les animaux et évènements marqués comme exemples seront supprimés. Vos propres saisies sont conservées.", "do-clear-examples", "", "Effacer les exemples"); break;
     case "do-clear-examples": clearExamples(); break;
     case "sort": { const k = t.dataset.k; UI.sort = {k, dir: UI.sort.k === k ? -UI.sort.dir : 1}; saveUI(); schedule(); break; }
     case "chip": { const k = t.dataset.k, v = t.dataset.v; UI.f[k] = UI.f[k].includes(v) ? UI.f[k].filter(x => x !== v) : [...UI.f[k], v]; saveUI(); schedule(); break; }
@@ -1477,10 +1392,8 @@ document.addEventListener("change", e => {
   if (IMP && t.id === "impUpd") { IMP.upd = t.checked; impZone(); }
   if (IMP && t.id === "impSkipOut") { IMP.skipOut = t.checked; impZone(); }
   if (IMP && t.id === "impLot") { IMP.lot = t.value.trim(); impZone(); }
-  if (t.id === "finYear") { UI.finYear = +t.value; saveUI(); schedule(); }
   if (t.id === "santeYear") { UI.santeYear = t.value; saveUI(); schedule(); }
   if (t.id === "wLot") { UI.weighLot = t.value; weighSession(); }
-  if (t.id === "fSens") { const c = $("#fCat"); if (c && !c.value) c.value = FIN_CAT[t.value][0]; }
 });
 document.addEventListener("submit", e => {
   e.preventDefault(); const f = e.target;
@@ -1489,10 +1402,10 @@ document.addEventListener("submit", e => {
   if (f.id === "fFarm") { const n = $("#farmName").value.trim(); if (!n) return; if (!navigator.onLine) return toast("Connexion internet nécessaire pour créer l'exploitation."); f.querySelectorAll("button").forEach(b => b.disabled = true); Store.createFarm(n).catch(err => { toast(err.message); f.querySelectorAll("button").forEach(b => b.disabled = false); }); return; }
   if (f.id === "fInvite") { const em = $("#invEmail").value.trim(), r = $("#invRole").value; Store.invite(em, r).then(() => { toast(`Invitation enregistrée pour ${em}.`); loadMembers(); inviteMail(em, r); }, err => toast(err.message)); return; }
   if (f.id === "fPw") { Store.updatePassword($("#newPw").value).then(() => { toast("Mot de passe modifié."); f.hidden = true; }, err => toast(err.message)); return; }
-  if (f.id === "fAnimal") saveAnimal(f); else if (f.id === "fEvent") saveEvent(f); else if (f.id === "fWeigh") saveWeigh(f); else if (f.id === "fFin") saveFin(f);
+  if (f.id === "fAnimal") saveAnimal(f); else if (f.id === "fEvent") saveEvent(f); else if (f.id === "fWeigh") saveWeigh(f);
 });
 
-function route() { const h = (location.hash || "").slice(1); view = ["tableau","animaux","repro","sante","pesees","finances"].includes(h) ? h : "tableau"; selected.clear(); schedule(); }
+function route() { const h = (location.hash || "").slice(1); view = ["tableau","animaux","repro","sante","pesees"].includes(h) ? h : "tableau"; selected.clear(); schedule(); }
 window.addEventListener("hashchange", route);
 document.getElementById("tabs").addEventListener("click", e => { const a = e.target.closest("a[data-v]"); if (!a) return; e.preventDefault(); view = a.dataset.v; try { history.replaceState(null, "", "#" + view); } catch {} selected.clear(); window.scrollTo(0, 0); schedule(); });
 route();

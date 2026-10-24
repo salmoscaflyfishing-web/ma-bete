@@ -1,7 +1,7 @@
 {
   "name": "Ma Bête – le carnet d'étable de votre troupeau",
   "short_name": "Ma Bête",
-  "description": "Le carnet d'étable de votre troupeau : inventaire, reproduction, santé, pesées et finances. Fonctionne hors ligne.",
+  "description": "Le carnet d'étable de votre troupeau : inventaire, reproduction, santé et pesées. Fonctionne hors ligne.",
   "lang": "fr",
   "id": "./",
   "start_url": "./",

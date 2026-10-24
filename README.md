@@ -2,7 +2,7 @@
 
 *Le carnet d'étable de votre troupeau.*
 
-Application de gestion de troupeau bovins viande : inventaire (colonnes au choix, filtres, tri par numéro de travail, « Dernier veau »), import de l'inventaire EDE, reproduction, santé et délais d'attente, pesées et GMQ, finances.
+Application de gestion de troupeau bovins viande : inventaire (colonnes au choix, filtres, tri par numéro de travail, « Dernier veau »), import de l'inventaire EDE, reproduction, santé et délais d'attente, pesées et GMQ.
 
 **Adresse de l'application : https://salmoscaflyfishing-web.github.io/ma-bete/**
 
@@ -163,7 +163,7 @@ Ma Bête ne peut pas se connecter au site de l'EDE (pas d'accès ouvert aux appl
 
 ## Sauvegardes
 
-**Compte** → **Exporter une sauvegarde** crée un fichier `ma-bete-AAAA-MM-JJ.json` avec tous les animaux, évènements et opérations. Gardez-en une copie de temps en temps (e-mail, clé USB).
+**Compte** → **Exporter une sauvegarde** crée un fichier `ma-bete-AAAA-MM-JJ.json` avec tous les animaux, évènements et boucles en stock. Gardez-en une copie de temps en temps (e-mail, clé USB).
 
 **Compte** → **Restaurer une sauvegarde** relit ce fichier (ou votre ancien fichier au format `{"format":"registre-troupeau","version":1,…}`), au choix :
 - **Fusionner** : ajoute et met à jour, sans rien supprimer ;
