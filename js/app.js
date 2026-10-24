@@ -263,7 +263,7 @@ UI.santeYear = UI.santeYear || "Toutes";
 if ((UI.v || 1) < 3) { for (const k of ["ageJours", "ageAns"]) if (!UI.cols.includes(k)) { const i = UI.cols.indexOf("age"); UI.cols.splice(i >= 0 ? i + 1 : UI.cols.length, 0, k); } }
 if ((UI.v || 1) < 2) { if (!UI.cols.includes("dernierVeau")) { const i = UI.cols.indexOf("repro"); UI.cols.splice(i >= 0 ? i + 1 : UI.cols.length, 0, "dernierVeau"); } UI.v = 2; }
 if (UI.v < 3) UI.v = 3;
-const saveUI = () => ls.set("registre-ui-v1", {v:UI.v, cols:UI.cols, f:UI.f, sort:UI.sort, santeYear:UI.santeYear});
+const saveUI = () => ls.set("registre-ui-v1", {v:UI.v, cols:UI.cols, f:UI.f, sort:UI.sort, santeYear:UI.santeYear, dash:UI.dash});
 let selected = new Set();
 let view = "tableau";
 
@@ -414,6 +414,21 @@ function vieillesPanel() {
 }
 
 /* ---- tableau de bord ---- */
+/* ---- tableau de bord personnalisable : blocs, ordre et largeur (réglage propre à chaque appareil) ---- */
+const DASH_BLOCS = {
+  kpis: "Chiffres clés", vieilles: "Vaches de plus de 9 ans", ede: "À notifier à l'EDE", alertes: "À surveiller",
+  effectif: "Effectif par catégorie", lots: "Effectif par lot", velages: "Prochains vêlages", recents: "Derniers évènements",
+};
+const DASH_DEFAUT = [
+  {k: "kpis", on: true, w: "full"}, {k: "vieilles", on: true, w: "full"}, {k: "ede", on: true, w: "full"},
+  {k: "alertes", on: true, w: "half"}, {k: "effectif", on: true, w: "half"}, {k: "recents", on: true, w: "full"},
+  {k: "velages", on: false, w: "half"}, {k: "lots", on: false, w: "half"},
+];
+function dashConfig() {
+  const cur = Array.isArray(UI.dash) ? UI.dash.filter(x => DASH_BLOCS[x.k]) : [];
+  for (const d of DASH_DEFAUT) if (!cur.some(x => x.k === d.k)) cur.push({...d}); // nouveaux blocs ajoutés à la fin
+  return cur;
+}
 function vTableau() {
   const pr = presents(), today = todayISO();
   if (!S.animaux.size) return `<div class="spread"><h2>Tableau de bord</h2></div>` + emptyHerd();
@@ -421,26 +436,46 @@ function vTableau() {
   const fem = pr.filter(a => D.get(a.id).repro);
   const gest = fem.filter(a => ["Gestante","Inséminée"].includes(D.get(a.id).repro)).length;
   const yr = String(new Date().getFullYear());
-  const velAn = velagesAnnee(yr);
-  const alerts = buildAlerts();
-  const max = Math.max(1, ...Object.values(byCat));
-  const recent = [...S.evenements.values()].filter(e => e.type !== LOT_EV).sort((a, b) => (b.date || "").localeCompare(a.date || "")).slice(0, 8);
+  const bars = obj => { const max = Math.max(1, ...Object.values(obj)); return `<div class="bars">${Object.entries(obj).sort((a,b)=>b[1]-a[1]).map(([c,n]) => `<div class="bar"><span>${esc(c)}</span><span class="tr"><i style="width:${n/max*100}%"></i></span><b class="num" style="text-align:right">${n}</b></div>`).join("")}</div>`; };
+  const blocs = {
+    kpis: () => `<div class="kpis">
+      <div class="kpi"><b>${pr.length}</b><span>Animaux présents</span></div>
+      <div class="kpi"><b>${byCat["Vache"] || 0}</b><span>Vaches</span></div>
+      <div class="kpi"><b>${gest}<small class="muted" style="font-size:.5em"> / ${fem.length}</small></b><span>Gestantes ou IA</span></div>
+      <div class="kpi"><b>${velagesAnnee(yr)}</b><span>Vêlages ${yr}</span></div></div>`,
+    vieilles: vieillesPanel,
+    ede: edePanel,
+    alertes: () => { const alerts = buildAlerts();
+      return `<section class="panel"><h3>À surveiller</h3>${alerts.length ? `<div class="alerts">${alerts.slice(0, 12).map(alertHTML).join("")}</div>${alerts.length > 12 ? `<p class="hint">+ ${alerts.length - 12} autres alertes dans les onglets Reproduction et Santé.</p>` : ""}` : `<p class="muted">Rien d'urgent : aucun vêlage imminent, diagnostic en retard ni délai d'attente en cours.</p>`}</section>`; },
+    effectif: () => `<section class="panel"><h3>Effectif par catégorie</h3>${bars(byCat)}</section>`,
+    lots: () => { const l = {}; pr.forEach(a => { const k = a.lot || "Sans lot"; l[k] = (l[k] || 0) + 1; }); return `<section class="panel"><h3>Effectif par lot</h3>${bars(l)}</section>`; },
+    velages: () => { const v = pr.filter(a => D.get(a.id).velagePrevu && ["Gestante","Inséminée"].includes(D.get(a.id).repro)).sort((x, y) => D.get(x.id).velagePrevu.localeCompare(D.get(y.id).velagePrevu)).slice(0, 10);
+      return `<section class="panel"><h3>Prochains vêlages</h3>${v.length ? `<div class="tablebox"><table><tbody>${v.map(a => { const d = D.get(a.id), j = days(today, d.velagePrevu);
+        return `<tr data-act="open-animal" data-id="${esc(a.id)}"><td>${tagHTML(a.numero)} ${esc(a.nom || "")}</td><td>${fmtD(d.velagePrevu)}</td><td>${reproPill(d)}</td><td class="n">${j < 0 ? `<span class="pill crit">${j} j</span>` : `${j} j`}</td></tr>`; }).join("")}</tbody></table></div>` : `<p class="muted">Aucun vêlage prévu.</p>`}</section>`; },
+    recents: () => { const recent = [...S.evenements.values()].filter(e => e.type !== LOT_EV).sort((a, b) => (b.date || "").localeCompare(a.date || "")).slice(0, 8);
+      return `<section class="panel"><h3>Derniers évènements</h3>${recent.length ? `<div class="timeline">${recent.map(e => evHTML(e, true)).join("")}</div>` : `<p class="muted">Aucun évènement saisi.</p>`}</section>`; },
+  };
+  const cells = dashConfig().filter(x => x.on).map(x => { const h = blocs[x.k](); return h ? `<div class="${x.w === "half" ? "half" : "full"}" data-bloc="${x.k}">${h}</div>` : ""; }).join("");
   return `
-  <div class="spread"><h2>Tableau de bord</h2>${readOnly ? "" : `<div class="row"><button class="btn" data-act="new-event">+ Évènement</button><button class="btn primary" data-act="new-animal">+ Animal</button></div>`}</div>
-  <div class="kpis">
-    <div class="kpi"><b>${pr.length}</b><span>Animaux présents</span></div>
-    <div class="kpi"><b>${byCat["Vache"] || 0}</b><span>Vaches</span></div>
-    <div class="kpi"><b>${gest}<small class="muted" style="font-size:.5em"> / ${fem.length}</small></b><span>Gestantes ou IA</span></div>
-    <div class="kpi"><b>${velAn}</b><span>Vêlages ${yr}</span></div>
-  </div>
-  ${vieillesPanel()}
-  ${edePanel()}
-  <div class="grid2">
-    <section class="panel"><h3>À surveiller</h3>${alerts.length ? `<div class="alerts">${alerts.slice(0, 12).map(alertHTML).join("")}</div>${alerts.length > 12 ? `<p class="hint">+ ${alerts.length - 12} autres alertes dans les onglets Reproduction et Santé.</p>` : ""}` : `<p class="muted">Rien d'urgent : aucun vêlage imminent, diagnostic en retard ni délai d'attente en cours.</p>`}</section>
-    <section class="panel"><h3>Effectif par catégorie</h3><div class="bars">${Object.entries(byCat).sort((a,b)=>b[1]-a[1]).map(([c,n]) => `<div class="bar"><span>${esc(c)}</span><span class="tr"><i style="width:${n/max*100}%"></i></span><b class="num" style="text-align:right">${n}</b></div>`).join("")}</div></section>
-  </div>
-  <section class="panel"><h3>Derniers évènements</h3>${recent.length ? `<div class="timeline">${recent.map(e => evHTML(e, true)).join("")}</div>` : `<p class="muted">Aucun évènement saisi.</p>`}</section>`;
+  <div class="spread"><h2>Tableau de bord</h2><div class="row"><button class="btn" data-act="dash-config">Personnaliser</button>${readOnly ? "" : `<button class="btn" data-act="new-event">+ Évènement</button><button class="btn primary" data-act="new-animal">+ Animal</button>`}</div></div>
+  <div class="dash">${cells || `<div class="full"><p class="muted">Aucun bloc affiché : touchez « Personnaliser » pour en choisir.</p></div>`}</div>`;
 }
+function dashDlg() {
+  const c = dashConfig();
+  openDlg(`<div class="dlg-head"><h3>Personnaliser le tableau de bord</h3><button class="close" data-act="close" aria-label="Fermer">×</button></div>
+  <div class="dlg-body">
+    <p class="hint" style="margin:0">Cochez les blocs à afficher, changez leur ordre avec les flèches et choisissez leur largeur. Deux blocs « demi-largeur » qui se suivent se placent côte à côte (sur téléphone, ils s'affichent l'un sous l'autre). Ce réglage est propre à cet appareil.</p>
+    <div class="tablebox"><table><tbody>
+    ${c.map((x, i) => `<tr><td style="width:34px"><input type="checkbox" class="dashOn" data-k="${x.k}" ${x.on ? "checked" : ""} aria-label="Afficher ${esc(DASH_BLOCS[x.k])}"></td>
+      <td class="wrap"><b>${esc(DASH_BLOCS[x.k])}</b></td>
+      <td><select class="search dashW" data-k="${x.k}" style="flex:none;min-width:0;padding:5px 8px" aria-label="Largeur"><option value="full" ${x.w !== "half" ? "selected" : ""}>Pleine largeur</option><option value="half" ${x.w === "half" ? "selected" : ""}>Demi-largeur</option></select></td>
+      <td class="n" style="white-space:nowrap"><button class="btn ghost sm" data-act="dash-up" data-k="${x.k}" ${i === 0 ? "disabled" : ""} aria-label="Monter">▲</button><button class="btn ghost sm" data-act="dash-down" data-k="${x.k}" ${i === c.length - 1 ? "disabled" : ""} aria-label="Descendre">▼</button></td></tr>`).join("")}
+    </tbody></table></div>
+  </div>
+  <div class="dlg-foot"><button class="btn" data-act="dash-reset">Disposition par défaut</button><span style="flex:1"></span><button class="btn primary" data-act="close">Terminé</button></div>`);
+}
+function dashSet(fn) { const c = dashConfig(); fn(c); UI.dash = c; saveUI(); schedule(); dashDlg(); }
+
 function buildAlerts() {
   const today = todayISO(), out = [];
   for (const a of presents()) {
@@ -1115,7 +1150,7 @@ async function exportCSV() {
 }
 
 /* ---------- application installable, mises à jour ---------- */
-const APP_VERSION = "1.10.0";
+const APP_VERSION = "1.11.0";
 let swWaiting = null, installEvt = null, localN = 0;
 if ("serviceWorker" in navigator && location.protocol !== "file:") {
   window.addEventListener("load", () => {
@@ -1601,6 +1636,9 @@ document.addEventListener("click", e => {
     case "do-import": runImport(); break;
     case "account": accountDlg(); break;
     case "add-tags": addTagsForm(); break;
+    case "dash-config": dashDlg(); break;
+    case "dash-up": case "dash-down": { const k = t.dataset.k, up = act === "dash-up"; dashSet(c => { const i = c.findIndex(x => x.k === k), j = up ? i - 1 : i + 1; if (j >= 0 && j < c.length) [c[i], c[j]] = [c[j], c[i]]; }); break; }
+    case "dash-reset": UI.dash = DASH_DEFAUT.map(x => ({...x})); saveUI(); schedule(); dashDlg(); break;
     case "lots": lotsDlg(); break;
     case "lot-new": lotForm(null); break;
     case "bulk-lot": lotForm(null, [...selected]); break;
@@ -1667,6 +1705,8 @@ document.addEventListener("change", e => {
   if ((t.id === "evAnimal" || t.id === "evDate") && $("#ef_veauLot") && !$("#ef_veauLot").dataset.touched) $("#ef_veauLot").value = lotVeau(evAnimalCourant());
   if (t.id === "impFile") onImportFile(t);
   if (t.id === "restoreFile") { onRestoreFile(t); }
+  if (t.classList.contains("dashOn")) dashSet(c => { c.find(x => x.k === t.dataset.k).on = t.checked; });
+  if (t.classList.contains("dashW")) dashSet(c => { c.find(x => x.k === t.dataset.k).w = t.value; });
   if (t.classList.contains("memberRole")) Store.setRole(t.dataset.user, t.value).then(() => toast("Rôle modifié."), err => { toast(err.message); loadMembers(); });
   if (IMP && t.classList.contains("impMap")) { IMP.map[t.dataset.f] = t.value === "" ? null : +t.value; impZone(); }
   if (IMP && t.id === "impUpd") { IMP.upd = t.checked; impZone(); }

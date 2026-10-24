@@ -178,6 +178,10 @@ Onglet **Reproduction** → **Boucles pour les veaux** → **+ Ajouter des boucl
 
 > Si l'exploitation a été créée avant l'arrivée du stock de boucles, la base Supabase doit être mise à jour une fois : **SQL Editor** → **New query** → collez de nouveau tout le fichier [`supabase/schema.sql`](supabase/schema.sql) → **Run**. Sans danger pour les données. En attendant, un bandeau l'indique et les boucles restent sur l'appareil.
 
+## Tableau de bord à votre façon
+
+Bouton **Personnaliser** du tableau de bord : cochez les blocs à afficher (Chiffres clés, Vaches de plus de 9 ans, À notifier à l'EDE, À surveiller, Effectif par catégorie, **Effectif par lot**, **Prochains vêlages**, Derniers évènements), changez leur ordre avec ▲ ▼ et choisissez **pleine largeur** ou **demi-largeur** (deux demi-largeurs se mettent côte à côte ; sur téléphone, l'un sous l'autre). Le réglage est propre à chaque appareil ; « Disposition par défaut » remet tout comme au départ.
+
 ## Naissances et sorties à notifier à l'EDE
 
 L'application ne peut pas se connecter au site de l'EDE (pas d'accès ouvert aux applications). Pour éviter la double saisie, tout se saisit une fois dans l'application, puis le tableau de bord affiche la rubrique **« À notifier à l'EDE »** :

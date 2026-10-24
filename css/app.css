@@ -197,3 +197,6 @@ label.btn input[type=file]{display:none}
 .panel.attention{border:2px solid var(--warn);background:linear-gradient(var(--warn-bg),var(--surface) 70px)}
 .panel.attention h3{color:var(--warn)}
 .ev.lot::before{background:var(--tag)}
+.dash{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+.dash>*{min-width:0}.dash>.full{grid-column:1/-1}.dash>.half>.panel{height:100%}
+@media (max-width:760px){.dash{grid-template-columns:1fr}}
