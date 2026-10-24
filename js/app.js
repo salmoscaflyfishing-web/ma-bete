@@ -357,6 +357,20 @@ async function edeMark(ids, kind, value) {
   try { await Store.write(items); return true; } catch (e) { handleErr(e); return false; }
 }
 
+/* ---- vaches âgées (à surveiller pour la réforme) ---- */
+const AGE_VIEILLES = 9; // années révolues
+function vieillesVaches() {
+  return presents().filter(a => a.sexe === "F" && D.get(a.id).ageAMJ && D.get(a.id).ageAMJ.y >= AGE_VIEILLES)
+    .sort((x, y) => D.get(y.id).ageJours - D.get(x.id).ageJours);
+}
+function vieillesPanel() {
+  const l = vieillesVaches(); if (!l.length) return "";
+  return `<section class="panel attention" id="vieilles"><div class="spread" style="margin-bottom:10px"><h3>⚠ Vaches de plus de ${AGE_VIEILLES} ans <span class="pill warn">${l.length}</span></h3><button class="btn sm" data-act="voir-vieilles">Voir dans la liste</button></div>
+  <div class="tablebox"><table><thead><tr><th class="first">Animal</th><th>Nom</th><th>Âge (AA/MM/JJ)</th><th class="n">Vêlages</th><th>Dernier vêlage</th><th>État repro</th><th>Lot</th></tr></thead><tbody>
+  ${l.map(a => { const d = D.get(a.id); return `<tr data-act="open-animal" data-id="${esc(a.id)}"><td class="first">${tagHTML(a.numero)}</td><td>${esc(a.nom || "")}</td><td class="mono"><b>${esc(d.ageAMJ.txt)}</b></td><td class="n">${fmtN(d.nbVelages)}</td><td>${fmtD(d.dernierVelage)}</td><td>${reproPill(d)}</td><td>${esc(a.lot || "")}</td></tr>`; }).join("")}
+  </tbody></table></div></section>`;
+}
+
 /* ---- tableau de bord ---- */
 function vTableau() {
   const pr = presents(), today = todayISO();
@@ -380,6 +394,7 @@ function vTableau() {
     <div class="kpi"><b>${velAn}</b><span>Vêlages ${yr}</span></div>
     <div class="kpi"><b style="color:${solde < 0 ? "var(--crit)" : "var(--ok)"}">${fmtN(solde)}&nbsp;€</b><span>Solde ${yr}</span></div>
   </div>
+  ${vieillesPanel()}
   ${edePanel()}
   <div class="grid2">
     <section class="panel"><h3>À surveiller</h3>${alerts.length ? `<div class="alerts">${alerts.slice(0, 12).map(alertHTML).join("")}</div>${alerts.length > 12 ? `<p class="hint">+ ${alerts.length - 12} autres alertes dans les onglets Reproduction et Santé.</p>` : ""}` : `<p class="muted">Rien d'urgent : aucun vêlage imminent, diagnostic en retard ni délai d'attente en cours.</p>`}</section>
@@ -1129,7 +1144,7 @@ async function exportCSV() {
 }
 
 /* ---------- application installable, mises à jour ---------- */
-const APP_VERSION = "1.3.1";
+const APP_VERSION = "1.4.0";
 let swWaiting = null, installEvt = null, localN = 0;
 if ("serviceWorker" in navigator && location.protocol !== "file:") {
   window.addEventListener("load", () => {
@@ -1394,6 +1409,8 @@ document.addEventListener("click", e => {
     case "do-clear-examples": clearExamples(); break;
     case "sort": { const k = t.dataset.k; UI.sort = {k, dir: UI.sort.k === k ? -UI.sort.dir : 1}; saveUI(); schedule(); break; }
     case "chip": { const k = t.dataset.k, v = t.dataset.v; UI.f[k] = UI.f[k].includes(v) ? UI.f[k].filter(x => x !== v) : [...UI.f[k], v]; saveUI(); schedule(); break; }
+    case "voir-vieilles": UI.f = {q:"", statut:["Présent"], sexe:["F"], categorie:[], race:[], lot:[], repro:[], delai:[], ageMin:String(AGE_VIEILLES * 12), ageMax:""};
+      UI.sort = {k:"ageAns", dir:-1}; UI.openF = true; saveUI(); view = "animaux"; try { history.replaceState(null, "", "#animaux"); } catch {} selected.clear(); window.scrollTo(0, 0); schedule(); break;
     case "reset-filters": UI.f = {q:"", statut:["Présent"], sexe:[], categorie:[], race:[], lot:[], repro:[], delai:[], ageMin:"", ageMax:""}; saveUI(); schedule(); break;
     case "cols-all": UI.cols = COLS.map(c => c.k); saveUI(); schedule(); break;
     case "cols-default": UI.cols = DEFAULT_COLS.slice(); saveUI(); schedule(); break;

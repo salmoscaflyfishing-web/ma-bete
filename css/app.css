@@ -194,3 +194,5 @@ label.btn input[type=file]{display:none}
 .tagbtn{border:0;background:none;padding:0;cursor:pointer;border-radius:3px 10px 10px 3px}
 .tagbtn:hover .tag{filter:brightness(.92)}
 .pill.info{display:inline-block}
+.panel.attention{border:2px solid var(--warn);background:linear-gradient(var(--warn-bg),var(--surface) 70px)}
+.panel.attention h3{color:var(--warn)}
