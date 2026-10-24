@@ -276,6 +276,74 @@ function velagesAnnee(yr) {
   return keys.size;
 }
 
+/* ---- notifications à l'EDE (naissances et sorties) ----
+   Une naissance ou une sortie saisie dans Ma Bête reste « à notifier » jusqu'à ce qu'on touche « Notifié ».
+   Les animaux venus d'un import EDE sont déjà connus de l'EDE. Les évènements antérieurs à NOTIF_DEPUIS
+   (mise en service de cette fonction) ne sont pas listés. */
+const NOTIF_DEPUIS = "2026-10-01";
+const RACE_CODE = n => (Object.entries(RACE_CODES).find(([, r]) => r === n) || [])[0];
+function notifState() {
+  const today = todayISO(), naiss = [], sorties = [];
+  for (const a of S.animaux.values()) {
+    if (NE_ICI(a.origine) && a.naissance && a.naissance >= NOTIF_DEPUIS && !a.notifNaissance) naiss.push({a, j: days(a.naissance, today)});
+    if ((a.statut || "Présent") !== "Présent" && a.dateSortie && a.dateSortie >= NOTIF_DEPUIS && !a.notifSortie) sorties.push({a, j: days(a.dateSortie, today)});
+  }
+  naiss.sort((x, y) => y.j - x.j); sorties.sort((x, y) => y.j - x.j);
+  return {naiss, sorties};
+}
+// niveau d'urgence selon l'ancienneté (en jours)
+const lvlNaiss = j => j >= 20 ? "crit" : j >= 7 ? "warn" : "info";
+const lvlSortie = j => j >= 7 ? "crit" : j >= 3 ? "warn" : "info";
+const ilYa = j => j <= 0 ? "aujourd'hui" : j === 1 ? "hier" : `il y a ${j} j`;
+const raceTxt = r => r ? `${r}${RACE_CODE(r) ? ` (${RACE_CODE(r)})` : ""}` : "";
+function edeTexte(a, kind) {
+  if (kind === "sortie") return [`Sortie ${norm(a.numero)}`, `le ${fmtD(a.dateSortie)}`, a.statut, a.motifSortie].filter(Boolean).join(" · ");
+  return [`Naissance ${norm(a.numero)}`, `née le ${fmtD(a.naissance)}`, a.sexe === "F" ? "femelle" : a.sexe === "M" ? "mâle" : "", raceTxt(a.race), a.mere && `mère ${norm(a.mere)}`, a.pere && `père ${a.pere}`].filter(Boolean).join(" · ");
+}
+function edePanel() {
+  const {naiss, sorties} = notifState();
+  if (!naiss.length && !sorties.length) return "";
+  const btns = (a, kind) => `<td class="n" style="white-space:nowrap"><button class="btn ghost sm" data-act="ede-copy" data-k="${kind}" data-id="${esc(a.id)}">Copier</button>${readOnly ? "" : `<button class="btn sm primary" data-act="ede-ok" data-k="${kind}" data-id="${esc(a.id)}">Notifié</button>`}</td>`;
+  const jours = (j, lvl) => `<td class="n"><span class="pill ${lvl}">${esc(ilYa(j))}</span></td>`;
+  return `<section class="panel" id="ede"><div class="spread" style="margin-bottom:6px"><h3>À notifier à l'EDE</h3><span class="pill warn">${naiss.length + sorties.length}</span></div>
+  <p class="hint" style="margin:0 0 10px">Recopiez ces informations sur le site de votre EDE (le bouton « Copier » met la ligne dans le presse-papiers), puis touchez « Notifié ».</p>
+  ${naiss.length ? `<div class="spread" style="margin:6px 0"><span class="flabel">Naissances (${naiss.length})</span>${readOnly || naiss.length < 2 ? "" : `<button class="btn sm" data-act="ede-all" data-k="naissance">Tout marquer notifié</button>`}</div>
+  <div class="tablebox"><table><thead><tr><th class="first">Veau</th><th>Né le</th><th>Sexe</th><th>Race (code)</th><th>Mère</th><th>Père</th><th class="n">Délai</th><th></th></tr></thead><tbody>
+  ${naiss.map(({a, j}) => `<tr data-act="open-animal" data-id="${esc(a.id)}"><td class="first">${tagHTML(a.numero)} ${esc(a.nom || "")}</td><td>${fmtD(a.naissance)}</td><td>${esc(a.sexe || "")}</td><td>${esc(raceTxt(a.race))}</td><td>${a.mere ? tagHTML(a.mere) : `<span class="pill warn">à compléter</span>`}</td><td>${esc(a.pere || "")}</td>${jours(j, lvlNaiss(j))}${btns(a, "naissance")}</tr>`).join("")}
+  </tbody></table></div>` : ""}
+  ${sorties.length ? `<div class="spread" style="margin:14px 0 6px"><span class="flabel">Sorties (${sorties.length})</span>${readOnly || sorties.length < 2 ? "" : `<button class="btn sm" data-act="ede-all" data-k="sortie">Tout marquer notifié</button>`}</div>
+  <div class="tablebox"><table><thead><tr><th class="first">Animal</th><th>Sortie le</th><th>Statut</th><th>Motif</th><th class="n">Délai</th><th></th></tr></thead><tbody>
+  ${sorties.map(({a, j}) => `<tr data-act="open-animal" data-id="${esc(a.id)}"><td class="first">${tagHTML(a.numero)} ${esc(a.nom || "")}</td><td>${fmtD(a.dateSortie)}</td><td>${esc(a.statut)}</td><td>${esc(a.motifSortie || "")}</td>${jours(j, lvlSortie(j))}${btns(a, "sortie")}</tr>`).join("")}
+  </tbody></table></div>` : ""}
+  </section>`;
+}
+function edeAlerts() {
+  const {naiss, sorties} = notifState(), out = [], rank = {crit: 3, warn: 2, info: 1};
+  const worst = (l, f) => l.map(x => f(x.j)).sort((p, q) => rank[q] - rank[p])[0];
+  if (naiss.length) out.push({lvl: worst(naiss, lvlNaiss), go: "tableau", anchor: "ede", t: `${naiss.length} naissance${naiss.length > 1 ? "s" : ""} à notifier à l'EDE`, s: `La plus ancienne : ${ilYa(naiss[0].j)}`, o: 4});
+  if (sorties.length) out.push({lvl: worst(sorties, lvlSortie), go: "tableau", anchor: "ede", t: `${sorties.length} sortie${sorties.length > 1 ? "s" : ""} à notifier à l'EDE`, s: `La plus ancienne : ${ilYa(sorties[0].j)}`, o: 4});
+  return out;
+}
+function edeFiche(a) {
+  const lignes = [];
+  if (NE_ICI(a.origine) && a.naissance && a.naissance >= NOTIF_DEPUIS) {
+    lignes.push(a.notifNaissance
+      ? `<div class="row"><span class="pill ok">Naissance notifiée</span><span class="hint">${a.notifNaissance === "EDE" ? "connue de l'EDE (import)" : `le ${fmtD(a.notifNaissance)}`}</span>${readOnly || a.notifNaissance === "EDE" ? "" : `<button class="btn ghost sm" data-act="ede-undo" data-k="naissance" data-id="${esc(a.id)}">Annuler</button>`}</div>`
+      : `<div class="row"><span class="pill warn">Naissance à notifier à l'EDE</span>${readOnly ? "" : `<button class="btn sm primary" data-act="ede-ok" data-k="naissance" data-id="${esc(a.id)}">Notifiée</button>`}</div>`);
+  }
+  if ((a.statut || "Présent") !== "Présent" && a.dateSortie && a.dateSortie >= NOTIF_DEPUIS) {
+    lignes.push(a.notifSortie
+      ? `<div class="row"><span class="pill ok">Sortie notifiée</span><span class="hint">${a.notifSortie === "EDE" ? "connue de l'EDE (import)" : `le ${fmtD(a.notifSortie)}`}</span>${readOnly || a.notifSortie === "EDE" ? "" : `<button class="btn ghost sm" data-act="ede-undo" data-k="sortie" data-id="${esc(a.id)}">Annuler</button>`}</div>`
+      : `<div class="row"><span class="pill warn">Sortie à notifier à l'EDE</span>${readOnly ? "" : `<button class="btn sm primary" data-act="ede-ok" data-k="sortie" data-id="${esc(a.id)}">Notifiée</button>`}</div>`);
+  }
+  return lignes.length ? `<div class="fgroup"><span class="flabel">EDE</span>${lignes.join("")}</div>` : "";
+}
+async function edeMark(ids, kind, value) {
+  const f = kind === "sortie" ? "notifSortie" : "notifNaissance", items = [];
+  for (const id of ids) { const a = S.animaux.get(id); if (!a) continue; const d = {...a}; delete d.id; if (value) d[f] = value; else delete d[f]; items.push({col: "animaux", id, data: d}); }
+  try { await Store.write(items); return true; } catch (e) { handleErr(e); return false; }
+}
+
 /* ---- tableau de bord ---- */
 function vTableau() {
   const pr = presents(), today = todayISO();
@@ -299,6 +367,7 @@ function vTableau() {
     <div class="kpi"><b>${velAn}</b><span>Vêlages ${yr}</span></div>
     <div class="kpi"><b style="color:${solde < 0 ? "var(--crit)" : "var(--ok)"}">${fmtN(solde)}&nbsp;€</b><span>Solde ${yr}</span></div>
   </div>
+  ${edePanel()}
   <div class="grid2">
     <section class="panel"><h3>À surveiller</h3>${alerts.length ? `<div class="alerts">${alerts.slice(0, 12).map(alertHTML).join("")}</div>${alerts.length > 12 ? `<p class="hint">+ ${alerts.length - 12} autres alertes dans les onglets Reproduction et Santé.</p>` : ""}` : `<p class="muted">Rien d'urgent : aucun vêlage imminent, diagnostic en retard ni délai d'attente en cours.</p>`}</section>
     <section class="panel"><h3>Effectif par catégorie</h3><div class="bars">${Object.entries(byCat).sort((a,b)=>b[1]-a[1]).map(([c,n]) => `<div class="bar"><span>${esc(c)}</span><span class="tr"><i style="width:${n/max*100}%"></i></span><b class="num" style="text-align:right">${n}</b></div>`).join("")}</div></section>
@@ -314,11 +383,12 @@ function buildAlerts() {
     if (a.categorie === "Vache" && d.repro === "Vide" && d.joursVide > VIDE_ALERTE) out.push({lvl:"warn", a, t:`Vide depuis ${d.joursVide} j`, s:`Dernier vêlage le ${fmtD(d.dernierVelage)}`, o: 60});
     if (d.enDelai) out.push({lvl:"crit", a, t:"Délai d'attente viande en cours", s:`Ne pas vendre avant le ${fmtD(addDays(d.finDelai, 1))}`, o: 5});
   }
+  out.push(...edeAlerts());
   const sb = stockState();
   if (sb.total && sb.dispo.length < BOUCLES_ALERTE) out.push({lvl: sb.dispo.length ? "warn" : "crit", go: "repro", t: sb.dispo.length ? `Stock de boucles bas : ${sb.dispo.length} restante${sb.dispo.length > 1 ? "s" : ""}` : "Plus de boucles en stock pour les veaux", s: "Commandez une nouvelle série auprès de l'EDE", o: 50});
   return out.sort((x, y) => x.o - y.o);
 }
-const alertHTML = x => x.go ? `<button class="alert ${x.lvl}" data-act="goto-view" data-v="${x.go}"><span class="t"><b>${esc(x.t)}</b><small>${esc(x.s)}</small></span><span class="muted">›</span></button>` : `<button class="alert ${x.lvl}" data-act="open-animal" data-id="${esc(x.a.id)}"><span class="t"><b>${esc(x.t)}</b><small>${esc(x.s)}</small></span>${tagHTML(x.a.numero)}</button>`;
+const alertHTML = x => x.go ? `<button class="alert ${x.lvl}" data-act="goto-view" data-v="${x.go}" data-anchor="${x.anchor || "stock"}"><span class="t"><b>${esc(x.t)}</b><small>${esc(x.s)}</small></span><span class="muted">›</span></button>` : `<button class="alert ${x.lvl}" data-act="open-animal" data-id="${esc(x.a.id)}"><span class="t"><b>${esc(x.t)}</b><small>${esc(x.s)}</small></span>${tagHTML(x.a.numero)}</button>`;
 
 /* ---- liste des animaux ---- */
 function distinct(k) { const s = new Set(); for (const a of S.animaux.values()) { const v = a[k]; if (v) s.add(v); } return [...s].sort((a,b)=>a.localeCompare(b,"fr")); }
@@ -647,6 +717,7 @@ function showAnimal(id) {
   <div class="dlg-body">
     <div class="row"><span class="pill ${s==="Présent"?"ok":s==="Mort"?"crit":""}">${esc(s)}</span>${reproPill(d)}${d.enDelai ? `<span class="pill crit">Délai d'attente jusqu'au ${fmtD(d.finDelai)}</span>` : ""}${d.aDiagnostiquer ? `<span class="pill info">Diagnostic à faire</span>` : ""}</div>
     <div class="info">${info}</div>
+    ${edeFiche(a)}
     ${a.notes ? `<p style="margin:0">${esc(a.notes)}</p>` : ""}
     ${d.pesees.length > 1 ? `<div><span class="flabel">Croissance</span>${sparkline(d.pesees)}</div>` : ""}
     ${kids.length ? `<div class="fgroup"><span class="flabel">Descendance (${kids.length})</span><div class="chips">${kids.map(k => `<button class="chip" data-act="open-animal" data-id="${esc(k.id)}">${esc(animalLabel(k))}${k.statut && k.statut !== "Présent" ? " · " + esc(k.statut) : ""}</button>`).join("")}</div></div>` : ""}
@@ -1012,6 +1083,9 @@ async function runImport() {
     const data = existing ? {...existing, ...rec} : {...rec};
     delete data.id; delete data.exemple;
     if (existing && existing.statut && !rec.dateSortie && existing.statut !== "Présent") data.statut = existing.statut;
+    // présents dans l'inventaire EDE : naissance (et sortie s'il y en a une) déjà connues de l'EDE
+    if (!data.notifNaissance) data.notifNaissance = "EDE";
+    if (rec.dateSortie && !data.notifSortie) data.notifSortie = "EDE";
     Object.keys(data).forEach(k => data[k] === undefined && delete data[k]);
     return {col: "animaux", id, data};
   });
@@ -1042,7 +1116,7 @@ async function exportCSV() {
 }
 
 /* ---------- application installable, mises à jour ---------- */
-const APP_VERSION = "1.2.3";
+const APP_VERSION = "1.3.0";
 let swWaiting = null, installEvt = null, localN = 0;
 if ("serviceWorker" in navigator && location.protocol !== "file:") {
   window.addEventListener("load", () => {
@@ -1315,11 +1389,17 @@ document.addEventListener("click", e => {
     case "do-import": runImport(); break;
     case "account": accountDlg(); break;
     case "add-tags": addTagsForm(); break;
+    case "ede-ok": edeMark([id], t.dataset.k, todayISO()).then(o => { if (o) { toast(t.dataset.k === "sortie" ? "Sortie marquée notifiée." : "Naissance marquée notifiée."); if (dlg.open && $("dialog[open] .info")) showAnimal(id); } }); break;
+    case "ede-undo": edeMark([id], t.dataset.k, null).then(o => { if (o) { toast("Remis dans la liste à notifier."); showAnimal(id); } }); break;
+    case "ede-all": { const st = notifState(), l = (t.dataset.k === "sortie" ? st.sorties : st.naiss).map(x => x.a.id);
+      edeMark(l, t.dataset.k, todayISO()).then(o => o && toast(`${l.length} ${t.dataset.k === "sortie" ? "sorties marquées notifiées" : "naissances marquées notifiées"}.`)); break; }
+    case "ede-copy": { const a = S.animaux.get(id); if (!a) break; const txt = edeTexte(a, t.dataset.k);
+      (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(() => toast("Copié : " + txt), () => toast(txt)); break; }
     case "tag-menu": tagMenu(id); break;
     case "tag-lost": tagSet(id, {statut: "Perdue", perdueLe: todayISO()}, "Boucle marquée perdue."); break;
     case "tag-restock": tagSet(id, {statut: "Disponible", perdueLe: undefined}, "Boucle remise en stock."); break;
     case "tag-delete": del("boucles", id).then(() => { toast("Boucle supprimée du stock."); closeDlg(); }).catch(() => {}); break;
-    case "goto-view": view = t.dataset.v; try { history.replaceState(null, "", "#" + view); } catch {} selected.clear(); schedule(); setTimeout(() => { const el = $("#stock"); if (el) el.scrollIntoView({block: "start"}); }, 80); break;
+    case "goto-view": view = t.dataset.v; try { history.replaceState(null, "", "#" + view); } catch {} selected.clear(); schedule(); setTimeout(() => { const el = document.getElementById(t.dataset.anchor || "stock"); if (el) el.scrollIntoView({block: "start"}); }, 80); break;
     case "show-login": closeDlg(); Store.showLogin(); break;
     case "sign-up": onLogin($("#fLogin"), true); break;
     case "reset-pw": { const em = $("#loginEmail")?.value.trim(), msg = $("#loginMsg");

@@ -193,3 +193,4 @@ label.btn input[type=file]{display:none}
 @media (max-width:560px){.brand small{font-size:.66rem;letter-spacing:.03em}.brand h1{font-size:1.3rem}}
 .tagbtn{border:0;background:none;padding:0;cursor:pointer;border-radius:3px 10px 10px 3px}
 .tagbtn:hover .tag{filter:brightness(.92)}
+.pill.info{display:inline-block}

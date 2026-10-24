@@ -151,6 +151,16 @@ Onglet **Reproduction** → **Boucles pour les veaux** → **+ Ajouter des boucl
 
 > Si l'exploitation a été créée avant l'arrivée du stock de boucles, la base Supabase doit être mise à jour une fois : **SQL Editor** → **New query** → collez de nouveau tout le fichier [`supabase/schema.sql`](supabase/schema.sql) → **Run**. Sans danger pour les données. En attendant, un bandeau l'indique et les boucles restent sur l'appareil.
 
+## Naissances et sorties à notifier à l'EDE
+
+Ma Bête ne peut pas se connecter au site de l'EDE (pas d'accès ouvert aux applications). Pour éviter la double saisie, tout se saisit une fois dans Ma Bête, puis le tableau de bord affiche la rubrique **« À notifier à l'EDE »** :
+
+- **Naissances** : chaque veau né sur l'exploitation (vêlage saisi ou animal ajouté) avec ce que demande l'EDE : n° du veau, date, sexe, race et son code (ex. Aubrac (14)), mère, père.
+- **Sorties** : ventes, morts, réformes, avec date et motif.
+- **Copier** met la ligne dans le presse-papiers ; après l'avoir saisie sur le site de l'EDE, touchez **Notifié**. La fiche de l'animal permet aussi de marquer la notification ou de l'annuler.
+- Une alerte apparaît dans « À surveiller » ; elle passe à l'orange puis au rouge quand la naissance (7 puis 20 jours) ou la sortie (3 puis 7 jours) attend depuis longtemps. Vérifiez les délais réglementaires auprès de votre EDE.
+- Les animaux venus d'un import EDE sont considérés comme déjà connus de l'EDE. Les naissances et sorties antérieures au 1er octobre 2026 ne sont pas listées.
+
 ## Sauvegardes
 
 **Compte** → **Exporter une sauvegarde** crée un fichier `ma-bete-AAAA-MM-JJ.json` avec tous les animaux, évènements et opérations. Gardez-en une copie de temps en temps (e-mail, clé USB).
