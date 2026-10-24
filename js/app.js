@@ -83,6 +83,18 @@ async function boot() {
 
 /* ---------- calculs dérivés ---------- */
 let D = new Map(), evByAnimal = new Map(), byNumero = new Map();
+// âge exact en années, mois et jours révolus entre deux dates « AAAA-MM-JJ »
+function ageAMJ(from, to) {
+  if (!from || !to || to < from) return null;
+  const [y1, m1, d1] = from.split("-").map(Number), [y2, m2, d2] = to.split("-").map(Number);
+  // date « anniversaire » après n mois (jour ramené à la fin du mois si besoin : né un 31)
+  const after = n => { const t = new Date(Date.UTC(y1, m1 - 1 + n, 1)), last = new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth() + 1, 0)).getUTCDate();
+    return `${t.getUTCFullYear()}-${pad(t.getUTCMonth() + 1)}-${pad(Math.min(d1, last))}`; };
+  let n = (y2 - y1) * 12 + (m2 - m1);
+  while (n > 0 && after(n) > to) n--;
+  const d = days(after(n), to), y = Math.floor(n / 12), m = n % 12;
+  return {y, m, d, txt: `${pad(y)}/${pad(m)}/${pad(d)}`};
+}
 function derive() {
   const today = todayISO();
   evByAnimal = new Map();
@@ -101,6 +113,7 @@ function derive() {
       // années révolues : l'anniversaire de cette année est-il passé ?
       const ans = +ref.slice(0, 4) - +a.naissance.slice(0, 4) - (ref.slice(5) < a.naissance.slice(5) ? 1 : 0);
       d.ageAns = Math.max(0, ans);
+      d.ageAMJ = ageAMJ(a.naissance, ref);
     }
     // pesées
     const pts = []; if (a.poidsNaissance && a.naissance) pts.push({date: a.naissance, poids: +a.poidsNaissance});
@@ -169,7 +182,7 @@ const COLS = [
   {k:"lot", l:"Lot"},
   {k:"naissance", l:"Naissance", t:"date"},
   {k:"age", l:"Âge (mois)", t:"num", v:(a,d)=>d.age},
-  {k:"ageAns", l:"Âge (ans)", t:"num", v:(a,d)=>d.ageAns},
+  {k:"ageAns", l:"Âge (AA/MM/JJ)", v:(a,d)=>d.ageAMJ?.txt, s:a=>D.get(a.id)?.ageJours, mono:true},
   {k:"ageJours", l:"Âge (jours)", t:"num", v:(a,d)=>d.ageJours},
   {k:"mere", l:"Mère", v:a=>a.mere, h:a=>{ if (!a.mere) return ""; const nm = byNumero.get(norm(a.mere))?.nom || a.mereNom; return `<span class="mono">${esc(norm(a.mere).slice(-4))}</span>${nm ? " " + esc(nm) : ""}`; }},
   {k:"pere", l:"Père"},
@@ -705,7 +718,7 @@ function showAnimal(id) {
   const mere = a.mere && byNumero.get(norm(a.mere));
   const info = [["Sexe", a.sexe === "F" ? "Femelle" : a.sexe === "M" ? "Mâle" : ""], ["Race", a.race], ["Catégorie", a.categorie], ["Lot", a.lot],
     ["Naissance", a.naissance ? `${fmtD(a.naissance)} (${d.age} mois)` : ""],
-    ["Âge (ans)", a.naissance ? `${d.ageAns} an${d.ageAns > 1 ? "s" : ""}` : ""], ["Âge (jours)", a.naissance ? `${fmtN(d.ageJours)} jour${d.ageJours > 1 ? "s" : ""}` : ""], ["Origine", a.origine], ["Entrée", fmtD(a.dateEntree)],
+    ["Âge (AA/MM/JJ)", d.ageAMJ ? `${d.ageAMJ.txt} (${d.ageAMJ.y} an${d.ageAMJ.y > 1 ? "s" : ""}, ${d.ageAMJ.m} mois, ${d.ageAMJ.d} jour${d.ageAMJ.d > 1 ? "s" : ""})` : ""], ["Âge (jours)", a.naissance ? `${fmtN(d.ageJours)} jour${d.ageJours > 1 ? "s" : ""}` : ""], ["Origine", a.origine], ["Entrée", fmtD(a.dateEntree)],
     ["Mère", mere ? `<a href="#" data-act="open-animal" data-id="${esc(mere.id)}">${esc(animalLabel(mere))}</a>` : esc(a.mere ? `${norm(a.mere).slice(-4)}${a.mereNom ? " · " + a.mereNom : ""}` : "")], ["Père", a.pere],
     ["Poids de naissance", a.poidsNaissance ? `${a.poidsNaissance} kg` : ""], ["Dernier poids", d.poids ? `${fmtN(d.poids)} kg (${fmtD(d.datePesee)})` : ""], ["GMQ", d.gmq != null ? `${d.gmq} g/j` : ""],
     ["Vêlages", a.sexe === "F" && d.nbVelages ? `${d.nbVelages}${d.ivv ? ` · IVV ${d.ivv} j` : ""}` : ""], ["Vêlage prévu", fmtD(d.velagePrevu)],
@@ -1116,7 +1129,7 @@ async function exportCSV() {
 }
 
 /* ---------- application installable, mises à jour ---------- */
-const APP_VERSION = "1.3.0";
+const APP_VERSION = "1.3.1";
 let swWaiting = null, installEvt = null, localN = 0;
 if ("serviceWorker" in navigator && location.protocol !== "file:") {
   window.addEventListener("load", () => {
