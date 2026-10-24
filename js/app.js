@@ -34,14 +34,15 @@ const EV = {
   "Chaleur": {g:"repro", f:[]},
   "Saillie / IA": {g:"repro", f:[["methode","Méthode","select",["IA","Saillie naturelle"]],["taureau","Taureau","text"]]},
   "Diagnostic gestation": {g:"repro", f:[["resultat","Résultat","select",["Positive","Négative"]],["methode","Méthode","select",["Échographie","Fouille","Prise de sang"]]]},
-  "Vêlage": {g:"repro", f:[["facilite","Facilité de vêlage","select",["1 – Sans aide","2 – Aide facile","3 – Aide difficile","4 – Césarienne","5 – Embryotomie"]],["veauNumero","N° national du veau","text"],["veauNom","Nom du veau","text"],["veauSexe","Sexe du veau","select",["F","M"]],["veauPoids","Poids de naissance (kg)","number"],["veauEtat","État du veau","select",["Vivant","Mort-né"]]]},
+  "Vêlage": {g:"repro", f:[["facilite","Facilité de vêlage","select",["1 – Sans aide","2 – Aide facile","3 – Aide difficile","4 – Césarienne","5 – Embryotomie"]],["veauNumero","N° national du veau","text"],["veauNom","Nom du veau","text"],["veauSexe","Sexe du veau","select",["F","M"]],["veauPoids","Poids de naissance (kg)","number"],["veauEtat","État du veau","select",["Vivant","Mort-né"]],["veauLot","Lot du veau","text"]]},
+  "Sevrage": {g:"prod", f:[["poids","Poids au sevrage (kg)","number"]]},
   "Avortement": {g:"repro", f:[]},
   "Traitement": {g:"sante", f:[["produit","Produit","text"],["motif","Motif","text"],["dose","Dose / voie","text"],["delaiViande","Délai d'attente viande (jours)","number"],["veterinaire","Vétérinaire","text"],["ordonnance","N° d'ordonnance","text"]]},
   "Vaccination": {g:"sante", f:[["produit","Vaccin","text"],["motif","Maladie visée","text"],["delaiViande","Délai d'attente viande (jours)","number"]]},
   "Note": {g:"note", f:[]},
   "Changement de lot": {g:"lot", f:[], interne:true}, // créé automatiquement, pas dans le formulaire
 };
-const BULK_OK = ["Traitement","Vaccination","Saillie / IA","Chaleur","Note"];
+const BULK_OK = ["Traitement","Vaccination","Sevrage","Saillie / IA","Chaleur","Note"];
 
 /* ---------- stockage (IndexedDB sur l'appareil + synchronisation, voir store.js) ---------- */
 const S = Store.S;
@@ -51,10 +52,35 @@ const loaded = { animaux:false, evenements:false, finances:false, boucles:false 
 
 async function put(col, id, data, opts = {}) {
   const clean = {}; Object.entries(data).forEach(([k, v]) => { if (k !== "id" && v !== undefined) clean[k] = v; });
-  const item = {col, id, data: clean};
-  try { await Store.write([item, ...lotChangeItems([item], opts.lotDate)]); }
+  const all = col === "animaux" ? avecVeaux([{col, id, data: clean}]) : [{col, id, data: clean}];
+  try { await Store.write([...all, ...lotChangeItems(all, opts.lotDate)]); if (suiveurs(all)) toast(`${suiveurs(all)} veau${suiveurs(all) > 1 ? "x suivent" : " suit"} sa mère dans le lot « ${clean.lot || "sans lot"} ».`); }
   catch (e) { handleErr(e); throw e; }
 }
+/* veaux sous la mère : tant qu'aucun « Sevrage » n'est saisi, le veau suit sa mère quand elle change de lot.
+   Garde-fou : au-delà de AGE_SUIVI_MAX mois (animaux nés avant le suivi du sevrage), il ne suit plus. */
+const AGE_SUIVI_MAX = 12;
+function veauxSousMere(m) {
+  if (!m || !m.numero) return [];
+  const n = norm(m.numero), today = todayISO();
+  const sevres = new Set([...S.evenements.values()].filter(e => e.type === "Sevrage").map(e => e.animal));
+  return presents().filter(k => norm(k.mere) === n && !sevres.has(k.id) && k.naissance && days(k.naissance, today) / 30.4375 < AGE_SUIVI_MAX);
+}
+function avecVeaux(items, skip) {
+  const ids = new Set(items.map(i => i.id)), out = [...items];
+  for (const it of items) {
+    if (it.col !== "animaux" || it.deleted) continue;
+    const old = S.animaux.get(it.id); if (!old) continue;
+    const avant = old.lot || "", apres = (it.data && it.data.lot) || "";
+    if (avant === apres || (skip && skip(avant, apres))) continue;
+    for (const k of veauxSousMere(old)) {
+      if (ids.has(k.id) || (k.lot || "") === apres) continue;
+      ids.add(k.id); const d = {...k}; delete d.id; if (apres) d.lot = apres; else delete d.lot;
+      out.push({col: "animaux", id: k.id, data: d, suit: true});
+    }
+  }
+  return out;
+}
+const suiveurs = items => items.filter(i => i.suit).length;
 /* historique des lots : un évènement « Changement de lot » à chaque fois que le lot d'un animal change */
 const LOT_EV = "Changement de lot";
 function lotChangeItems(items, date, skip) {
@@ -127,7 +153,7 @@ function derive() {
     }
     // pesées
     const pts = []; if (a.poidsNaissance && a.naissance) pts.push({date: a.naissance, poids: +a.poidsNaissance});
-    evs.filter(e => e.type === "Pesée" && e.poids).forEach(e => pts.push({date: e.date, poids: +e.poids}));
+    evs.filter(e => (e.type === "Pesée" || e.type === "Sevrage") && e.poids).forEach(e => pts.push({date: e.date, poids: +e.poids}));
     pts.sort((x, y) => x.date.localeCompare(y.date)); d.pesees = pts;
     if (pts.length) { const l = pts[pts.length-1]; d.poids = l.poids; d.datePesee = l.date;
       if (pts.length > 1) { const p = pts[pts.length-2]; const j = days(p.date, l.date); if (j > 0) d.gmq = Math.round((l.poids - p.poids) / j * 1000); } }
@@ -169,6 +195,8 @@ function derive() {
     if (soins.length) { const l = soins[soins.length-1]; d.dernierTraitement = `${l.produit || l.type} (${fmtD(l.date)})`; }
     let fin = null; soins.forEach(e => { const n = +e.delaiViande; if (n > 0) { const f = addDays(e.date, n); if (!fin || f > fin) fin = f; } });
     d.finDelai = fin; d.enDelai = !!fin && fin >= today && (a.statut || "Présent") === "Présent";
+    const sev = evs.filter(e => e.type === "Sevrage"); if (sev.length) d.sevrage = sev[sev.length - 1].date;
+    d.sousMere = !d.sevrage && !!a.mere && (a.statut || "Présent") === "Présent" && d.age != null && d.age < AGE_SUIVI_MAX && byNumero.has(norm(a.mere));
     D.set(a.id, d);
   }
 }
@@ -696,6 +724,7 @@ function showAnimal(id) {
   const mere = a.mere && byNumero.get(norm(a.mere));
   const info = [["Sexe", a.sexe === "F" ? "Femelle" : a.sexe === "M" ? "Mâle" : ""], ["Race", a.race], ["Catégorie", a.categorie], ["Lot", a.lot],
     ["Naissance", a.naissance ? `${fmtD(a.naissance)} (${d.age} mois)` : ""],
+    ["Sevrage", d.sevrage ? fmtD(d.sevrage) : d.sousMere ? "Non sevré (suit sa mère)" : ""],
     ["Âge (AA/MM/JJ)", d.ageAMJ ? `${d.ageAMJ.txt} (${d.ageAMJ.y} an${d.ageAMJ.y > 1 ? "s" : ""}, ${d.ageAMJ.m} mois, ${d.ageAMJ.d} jour${d.ageAMJ.d > 1 ? "s" : ""})` : ""], ["Âge (jours)", a.naissance ? `${fmtN(d.ageJours)} jour${d.ageJours > 1 ? "s" : ""}` : ""], ["Origine", a.origine], ["Entrée", fmtD(a.dateEntree)],
     ["Mère", mere ? `<a href="#" data-act="open-animal" data-id="${esc(mere.id)}">${esc(animalLabel(mere))}</a>` : esc(a.mere ? `${norm(a.mere).slice(-4)}${a.mereNom ? " · " + a.mereNom : ""}` : "")], ["Père", a.pere],
     ["Poids de naissance", a.poidsNaissance ? `${a.poidsNaissance} kg` : ""], ["Dernier poids", d.poids ? `${fmtN(d.poids)} kg (${fmtD(d.datePesee)})` : ""], ["GMQ", d.gmq != null ? `${d.gmq} g/j` : ""],
@@ -769,15 +798,17 @@ function eventForm({animalIds = [], type = "Pesée"} = {}) {
       ${fld("evType","Type", `<select id="evType" name="evType">${opt(types, type)}</select>`)}
       ${fld("evDate","Date", inp("evDate", todayISO(), "date", "required"))}
     </div>
-    <div class="form" id="evFields">${evFields(type)}</div>
+    <div class="form" id="evFields">${evFields(type, animalIds.length === 1 ? animalIds[0] : "")}</div>
     ${fld("commentaire","Commentaire", `<textarea id="commentaire" name="commentaire"></textarea>`, true)}
   </div>
   <div class="dlg-foot"><button type="button" class="btn" data-act="close">Annuler</button><button class="btn primary" type="submit">Enregistrer</button></div>
   </form>`);
 }
-function evFields(type) {
+function lotVeau(animalId) { const m = animalId && S.animaux.get(animalId); return m && m.lot ? m.lot : `Veaux ${($("#evDate")?.value || todayISO()).slice(0, 4)}`; }
+const evAnimalCourant = () => { const f = $("#fEvent"); return f && f.dataset.ids ? f.dataset.ids.split(",")[0] : $("#evAnimal")?.value || ""; };
+function evFields(type, animalId) {
   const fs = (EV[type] || {f:[]}).f;
-  let h = fs.map(([k, l, t, o]) => k === "veauNumero" ? fld("ef_" + k, l, `<input id="ef_veauNumero" name="veauNumero" type="text" list="dlBoucles" autocomplete="off" placeholder="FR 12 0123 4567" value="${esc(nextTag())}">${dlBoucles()}`) : fld("ef_" + k, l, t === "select" ? `<select id="ef_${k}" name="${k}">${opt(o, o[0])}</select>` : `<input id="ef_${k}" name="${k}" type="${t}" ${t==="number"?'min="0" step="any"':""}>`)).join("");
+  let h = fs.map(([k, l, t, o]) => k === "veauLot" ? fld("ef_veauLot", l, `<input id="ef_veauLot" name="veauLot" type="text" list="dlLotsVeau" autocomplete="off" value="${esc(lotVeau(animalId))}"><datalist id="dlLotsVeau">${distinct("lot").map(x => `<option value="${esc(x)}">`).join("")}</datalist>`) : k === "veauNumero" ? fld("ef_" + k, l, `<input id="ef_veauNumero" name="veauNumero" type="text" list="dlBoucles" autocomplete="off" placeholder="FR 12 0123 4567" value="${esc(nextTag())}">${dlBoucles()}`) : fld("ef_" + k, l, t === "select" ? `<select id="ef_${k}" name="${k}">${opt(o, o[0])}</select>` : `<input id="ef_${k}" name="${k}" type="${t}" ${t==="number"?'min="0" step="any"':""}>`)).join("");
   if (type === "Vêlage") { const nd = stockState().dispo.length;
     h += `<p class="hint full" style="grid-column:1/-1;margin:0">Si vous saisissez le numéro d'un veau vivant, il est ajouté automatiquement au troupeau avec sa mère et son père.</p>`;
     h += `<p class="hint full" style="grid-column:1/-1;margin:0">${nd ? `Numéro proposé : la prochaine boucle libre du stock (${nd} disponible${nd > 1 ? "s" : ""}). Effacez-le si le veau n'est pas bouclé, ou scannez sa boucle.` : `Astuce : enregistrez vos boucles dans Reproduction → « Boucles pour les veaux » pour qu'elles soient proposées ici.`}</p>`; }
@@ -845,7 +876,7 @@ async function saveEvent(form) {
       const m = S.animaux.get(ids[0]); derive(); const dm = D.get(ids[0]) || {};
       const vn = norm(base.veauNumero);
       if (![...S.animaux.values()].some(x => norm(x.numero) === vn)) {
-        const veau = {numero: vn, nom: base.veauNom || "", sexe: base.veauSexe || "F", race: m?.race || "", categorie: "Veau", lot: "Veaux " + date.slice(0,4),
+        const veau = {numero: vn, nom: base.veauNom || "", sexe: base.veauSexe || "F", race: m?.race || "", categorie: "Veau", lot: val(form, "veauLot") || undefined,
           naissance: date, mere: norm(m?.numero), pere: lastBull(ids[0]) || "", origine: "Né sur l'exploitation", dateEntree: date, statut: "Présent"};
         if (base.veauPoids) veau.poidsNaissance = base.veauPoids;
         await put("animaux", newId(), veau, {lotDate: date});
@@ -1079,7 +1110,7 @@ async function exportCSV() {
 }
 
 /* ---------- application installable, mises à jour ---------- */
-const APP_VERSION = "1.7.0";
+const APP_VERSION = "1.8.0";
 let swWaiting = null, installEvt = null, localN = 0;
 if ("serviceWorker" in navigator && location.protocol !== "file:") {
   window.addEventListener("load", () => {
@@ -1378,12 +1409,14 @@ async function saveLot() {
   }
   if (!items.length) { closeDlg(); return toast("Aucun changement."); }
   const date = $("#lotDate")?.value || todayISO(), rename = orig && name !== orig;
+  items.splice(0, items.length, ...avecVeaux(items, (av, ap) => rename && av === orig && ap === name));
+  const nSuit = suiveurs(items);
   // un simple renommage n'est pas un déplacement : on renomme le lot dans l'historique au lieu d'ajouter un évènement
   const evs = lotChangeItems(items, date, (av, ap) => rename && av === orig && ap === name).map(x => { if (rename && x.data.lotAvant === orig) x.data.lotAvant = name; return x; });
   if (rename) for (const e of S.evenements.values()) if (e.type === LOT_EV && (e.lotAvant === orig || e.lotApres === orig)) {
     const d = {...e}; delete d.id; if (d.lotAvant === orig) d.lotAvant = name; if (d.lotApres === orig) d.lotApres = name; evs.push({col: "evenements", id: e.id, data: d});
   }
-  try { await Store.write([...items, ...evs]); toast(`Lot « ${name} » : ${checked.size} anima${checked.size > 1 ? "ux" : "l"}.`); LOT = null; selected.clear(); closeDlg(); schedule(); }
+  try { await Store.write([...items, ...evs]); toast(`Lot « ${name} » : ${checked.size} anima${checked.size > 1 ? "ux" : "l"}.${nSuit ? ` ${nSuit} veau${nSuit > 1 ? "x suivent leur" : " suit sa"} mère.` : ""}`); LOT = null; selected.clear(); closeDlg(); schedule(); }
   catch (e) { handleErr(e); }
 }
 async function dissoudreLot(lot) {
@@ -1517,11 +1550,13 @@ document.addEventListener("input", e => {
   if (t.id === "q") { UI.f.q = t.value; clearTimeout(qT); qT = setTimeout(() => { saveUI(); const pos = t.selectionStart; render(); const n = $("#q"); if (n) { n.focus(); try { n.setSelectionRange(pos, pos); } catch {} } }, 220); }
   if (t.id === "tFirst" || t.id === "tCount") tagsPreview();
   if (t.id === "lotQ") lotFilter(t.value);
+  if (t.id === "ef_veauLot") t.dataset.touched = "1";
   if (t.id === "ageMin" || t.id === "ageMax") { UI.f[t.id] = t.value; clearTimeout(qT); qT = setTimeout(() => { saveUI(); render(); const n = $("#" + t.id); if (n) n.focus(); }, 400); }
 });
 document.addEventListener("change", e => {
   const t = e.target;
-  if (t.id === "evType") $("#evFields").innerHTML = evFields(t.value);
+  if (t.id === "evType") $("#evFields").innerHTML = evFields(t.value, evAnimalCourant());
+  if ((t.id === "evAnimal" || t.id === "evDate") && $("#ef_veauLot") && !$("#ef_veauLot").dataset.touched) $("#ef_veauLot").value = lotVeau(evAnimalCourant());
   if (t.id === "impFile") onImportFile(t);
   if (t.id === "restoreFile") { onRestoreFile(t); }
   if (t.classList.contains("memberRole")) Store.setRole(t.dataset.user, t.value).then(() => toast("Rôle modifié."), err => { toast(err.message); loadMembers(); });

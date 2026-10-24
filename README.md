@@ -150,6 +150,13 @@ Onglet **Animaux** → bouton **Lots** : la liste des lots avec le nombre d'anim
 - **Voir** affiche le lot dans la liste Animaux ; les lots sont aussi proposés pour les séances de pesée.
 - **Historique** : chaque changement de lot est daté (date choisie dans le formulaire de lot, aujourd'hui par défaut) et apparaît dans l'historique de la fiche. La fiche affiche aussi le récapitulatif **« Lots successifs »** avec les périodes et durées. Renommer un lot ne compte pas comme un déplacement. Le suivi commence avec la version 1.7.0 (avant, la date d'entrée est inconnue).
 
+### Veaux sous la mère et sevrage
+
+- Au **vêlage**, le champ **« Lot du veau »** est prérempli avec le lot de la mère (ou « Veaux AAAA » si elle n'en a pas) ; on peut le changer, ou le vider pour ne pas mettre de lot.
+- Tant qu'aucun évènement **« Sevrage »** n'est saisi, le veau **suit sa mère** : quand elle change de lot (formulaire de lot, « Mettre dans un lot » ou sa fiche), ses veaux non sevrés changent avec elle, à la même date.
+- **Sevrage** : nouvel évènement (avec le poids au sevrage, compté comme une pesée), saisissable en groupe : sélectionnez les veaux dans la liste → « Ajouter un évènement » → Sevrage. Après le sevrage, le veau ne suit plus sa mère.
+- Garde-fou : un animal de plus de 12 mois ne suit plus sa mère, même sans sevrage saisi (animaux nés avant cette fonction). Renommer un lot ne déplace pas les veaux.
+
 ## Stock de boucles pour les veaux
 
 Onglet **Reproduction** → **Boucles pour les veaux** → **+ Ajouter des boucles** : saisissez le premier numéro de la série reçue de l'EDE (par ex. `FR 12 0123 8001`) et le nombre de boucles ; les numéros suivants sont calculés tout seuls (les boucles déjà en stock sont ignorées).
