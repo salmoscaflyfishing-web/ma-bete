@@ -96,6 +96,12 @@ function derive() {
     const evs = evByAnimal.get(a.id) || [];
     const ref = a.statut && a.statut !== "Présent" && a.dateSortie ? a.dateSortie : today;
     const d = { age: a.naissance ? Math.max(0, Math.floor(days(a.naissance, ref) / 30.4375)) : null };
+    if (a.naissance) {
+      d.ageJours = Math.max(0, days(a.naissance, ref));
+      // années révolues : l'anniversaire de cette année est-il passé ?
+      const ans = +ref.slice(0, 4) - +a.naissance.slice(0, 4) - (ref.slice(5) < a.naissance.slice(5) ? 1 : 0);
+      d.ageAns = Math.max(0, ans);
+    }
     // pesées
     const pts = []; if (a.poidsNaissance && a.naissance) pts.push({date: a.naissance, poids: +a.poidsNaissance});
     evs.filter(e => e.type === "Pesée" && e.poids).forEach(e => pts.push({date: e.date, poids: +e.poids}));
@@ -163,6 +169,8 @@ const COLS = [
   {k:"lot", l:"Lot"},
   {k:"naissance", l:"Naissance", t:"date"},
   {k:"age", l:"Âge (mois)", t:"num", v:(a,d)=>d.age},
+  {k:"ageAns", l:"Âge (ans)", t:"num", v:(a,d)=>d.ageAns},
+  {k:"ageJours", l:"Âge (jours)", t:"num", v:(a,d)=>d.ageJours},
   {k:"mere", l:"Mère", v:a=>a.mere, h:a=>{ if (!a.mere) return ""; const nm = byNumero.get(norm(a.mere))?.nom || a.mereNom; return `<span class="mono">${esc(norm(a.mere).slice(-4))}</span>${nm ? " " + esc(nm) : ""}`; }},
   {k:"pere", l:"Père"},
   {k:"origine", l:"Origine"},
@@ -188,7 +196,7 @@ const COLS = [
   {k:"notes", l:"Notes", wrap:true},
 ];
 const colVal = (c, a, d) => c.v ? c.v(a, d) : a[c.k];
-const DEFAULT_COLS = ["numero","nom","sexe","race","categorie","lot","age","poids","repro","dernierVeau","velagePrevu","finDelai"];
+const DEFAULT_COLS = ["numero","nom","sexe","race","categorie","lot","age","ageAns","ageJours","poids","repro","dernierVeau","velagePrevu","finDelai"];
 
 /* ---------- état de l'interface ---------- */
 const UI = ls.get("registre-ui-v1", null) || {};
@@ -197,7 +205,9 @@ UI.f = UI.f || {q:"", statut:["Présent"], sexe:[], categorie:[], race:[], lot:[
 UI.sort = UI.sort || {k:"numero", dir:1};
 UI.finYear = UI.finYear || new Date().getFullYear();
 UI.santeYear = UI.santeYear || "Toutes";
+if ((UI.v || 1) < 3) { for (const k of ["ageJours", "ageAns"]) if (!UI.cols.includes(k)) { const i = UI.cols.indexOf("age"); UI.cols.splice(i >= 0 ? i + 1 : UI.cols.length, 0, k); } }
 if ((UI.v || 1) < 2) { if (!UI.cols.includes("dernierVeau")) { const i = UI.cols.indexOf("repro"); UI.cols.splice(i >= 0 ? i + 1 : UI.cols.length, 0, "dernierVeau"); } UI.v = 2; }
+if (UI.v < 3) UI.v = 3;
 const saveUI = () => ls.set("registre-ui-v1", {v:UI.v, cols:UI.cols, f:UI.f, sort:UI.sort, finYear:UI.finYear, santeYear:UI.santeYear});
 let selected = new Set();
 let view = "tableau";
@@ -624,7 +634,8 @@ function showAnimal(id) {
   const kids = [...S.animaux.values()].filter(k => a.numero && norm(k.mere) === norm(a.numero));
   const mere = a.mere && byNumero.get(norm(a.mere));
   const info = [["Sexe", a.sexe === "F" ? "Femelle" : a.sexe === "M" ? "Mâle" : ""], ["Race", a.race], ["Catégorie", a.categorie], ["Lot", a.lot],
-    ["Naissance", a.naissance ? `${fmtD(a.naissance)} (${d.age} mois)` : ""], ["Origine", a.origine], ["Entrée", fmtD(a.dateEntree)],
+    ["Naissance", a.naissance ? `${fmtD(a.naissance)} (${d.age} mois)` : ""],
+    ["Âge (ans)", a.naissance ? `${d.ageAns} an${d.ageAns > 1 ? "s" : ""}` : ""], ["Âge (jours)", a.naissance ? `${fmtN(d.ageJours)} jour${d.ageJours > 1 ? "s" : ""}` : ""], ["Origine", a.origine], ["Entrée", fmtD(a.dateEntree)],
     ["Mère", mere ? `<a href="#" data-act="open-animal" data-id="${esc(mere.id)}">${esc(animalLabel(mere))}</a>` : esc(a.mere ? `${norm(a.mere).slice(-4)}${a.mereNom ? " · " + a.mereNom : ""}` : "")], ["Père", a.pere],
     ["Poids de naissance", a.poidsNaissance ? `${a.poidsNaissance} kg` : ""], ["Dernier poids", d.poids ? `${fmtN(d.poids)} kg (${fmtD(d.datePesee)})` : ""], ["GMQ", d.gmq != null ? `${d.gmq} g/j` : ""],
     ["Vêlages", a.sexe === "F" && d.nbVelages ? `${d.nbVelages}${d.ivv ? ` · IVV ${d.ivv} j` : ""}` : ""], ["Vêlage prévu", fmtD(d.velagePrevu)],
@@ -1031,7 +1042,7 @@ async function exportCSV() {
 }
 
 /* ---------- application installable, mises à jour ---------- */
-const APP_VERSION = "1.2.2";
+const APP_VERSION = "1.2.3";
 let swWaiting = null, installEvt = null, localN = 0;
 if ("serviceWorker" in navigator && location.protocol !== "file:") {
   window.addEventListener("load", () => {
