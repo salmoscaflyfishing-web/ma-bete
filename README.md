@@ -140,6 +140,15 @@ Vous pouvez à tout moment changer le rôle d'un membre ou le retirer (✕) depu
 
 Astuce Android : quand un clavier Bluetooth est connecté, le clavier de l'écran peut disparaître. Un appui long sur l'icône clavier dans la barre de notification permet de le réafficher.
 
+## Lots
+
+Onglet **Animaux** → bouton **Lots** : la liste des lots avec le nombre d'animaux et leur composition (ex. « 3 vaches · 1 taureau »).
+
+- **+ Nouveau lot** : donnez un nom, puis cochez les animaux. Le champ « Filtrer » aide à trouver (numéro, nom, catégorie…) et **Cocher les animaux affichés** coche d'un coup, par exemple toutes les vaches. Avec le **lecteur de boucles**, scannez simplement les animaux pour les cocher.
+- Depuis la liste Animaux, sélectionnez des animaux puis **Mettre dans un lot** (lot nouveau ou existant).
+- **Modifier** : changer les animaux du lot ou le renommer. **Dissoudre le lot** retire le lot des animaux, sans les supprimer.
+- **Voir** affiche le lot dans la liste Animaux ; les lots sont aussi proposés pour les séances de pesée.
+
 ## Stock de boucles pour les veaux
 
 Onglet **Reproduction** → **Boucles pour les veaux** → **+ Ajouter des boucles** : saisissez le premier numéro de la série reçue de l'EDE (par ex. `FR 12 0123 8001`) et le nombre de boucles ; les numéros suivants sont calculés tout seuls (les boucles déjà en stock sont ignorées).

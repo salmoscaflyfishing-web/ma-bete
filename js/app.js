@@ -454,7 +454,7 @@ function vAnimaux() {
       return `<td class="${c.t==="num"?"n":""}${i===0?" first":""}${c.wrap?" wrap":""}">${h ?? ""}</td>`; }).join("")}</tr>`; }).join("");
   return `
   <div class="spread"><h2>Animaux <span class="muted num" style="font-size:.6em">${list.length} / ${S.animaux.size}</span></h2>
-    <div class="row">${readOnly ? "" : `<button class="btn" data-act="import">Importer (EDE, Excel)</button>`}${exportAvail ? `<button class="btn" data-act="export">Exporter CSV</button>` : ""}${readOnly ? "" : `<button class="btn primary" data-act="new-animal">+ Animal</button>`}</div></div>
+    <div class="row"><button class="btn" data-act="lots">Lots</button>${readOnly ? "" : `<button class="btn" data-act="import">Importer (EDE, Excel)</button>`}${exportAvail ? `<button class="btn" data-act="export">Exporter CSV</button>` : ""}${readOnly ? "" : `<button class="btn primary" data-act="new-animal">+ Animal</button>`}</div></div>
   <div class="toolbar"><input class="search" id="q" type="search" placeholder="Rechercher un numéro, un nom, une race, un lot…" value="${esc(f.q)}" aria-label="Rechercher"></div>
   <details class="filters" ${UI.openF ? "open" : ""} data-k="openF"><summary>Filtres${nActive ? ` <span class="pill info">${nActive} actif${nActive>1?"s":""}</span>` : ""}</summary>
     <div class="fbody">
@@ -1008,7 +1008,7 @@ function impZone() {
     <label class="row" style="font-size:.92rem;text-transform:none;letter-spacing:0;color:var(--ink);font-weight:400"><input type="checkbox" id="impSkipOut" ${IMP.skipOut ? "checked" : ""}> Ignorer les animaux sortis</label></div></div>
   <div class="kpis"><div class="kpi"><b>${nNew}</b><span>Nouveaux</span></div><div class="kpi"><b>${nEx}</b><span>Déjà présents</span></div><div class="kpi"><b>${nOut}</b><span>Sortis</span></div><div class="kpi"><b style="color:${bad ? "var(--warn)" : "inherit"}">${bad}</b><span>Lignes sans n° valide</span></div></div>
   ${preview.length ? `<div class="tablebox"><table><thead><tr><th>N° national</th><th>Sexe</th><th>Race</th><th>Naissance</th><th>Catégorie</th><th>Mère</th><th>Statut</th></tr></thead><tbody>${preview.map(({rec, existing}) => `<tr><td>${tagHTML(rec.numero)}${existing ? ` <span class="pill">existe</span>` : ""}</td><td>${esc(rec.sexe || "")}</td><td>${esc(rec.race || "")}</td><td>${fmtD(rec.naissance)}</td><td>${esc(rec.categorie || "")}</td><td class="mono">${esc((rec.mere || "").slice(-4))}</td><td>${esc(rec.statut)}</td></tr>`).join("")}</tbody></table></div><p class="hint" style="margin:0">Aperçu des ${preview.length} premières lignes. La catégorie est déduite du sexe, de l'âge et de la présence de veaux quand le fichier ne la donne pas.</p>` : `<p class="muted" style="margin:0">Aucun numéro national reconnu. Vérifiez la colonne choisie pour « N° national ».</p>`}
-  <div class="row" style="justify-content:flex-end"><button class="btn primary" data-act="do-import" id="impGo" ${valid.length ? "" : "disabled"}>Importer ${valid.length} animal${valid.length > 1 ? "aux" : ""}</button></div>`;
+  <div class="row" style="justify-content:flex-end"><button class="btn primary" data-act="do-import" id="impGo" ${valid.length ? "" : "disabled"}>Importer ${valid.length} anima${valid.length > 1 ? "ux" : "l"}</button></div>`;
 }
 async function onImportFile(input) {
   const file = input.files && input.files[0]; if (!file) return;
@@ -1063,7 +1063,7 @@ async function exportCSV() {
 }
 
 /* ---------- application installable, mises à jour ---------- */
-const APP_VERSION = "1.5.0";
+const APP_VERSION = "1.6.0";
 let swWaiting = null, installEvt = null, localN = 0;
 if ("serviceWorker" in navigator && location.protocol !== "file:") {
   window.addEventListener("load", () => {
@@ -1271,6 +1271,13 @@ function handleScan(raw) {
     vn.value = t; toast(`N° du veau : ${t}`); return;
   }
   if (!a) { toast(`Boucle lue (…${last10}) : aucun animal du registre ne porte ce numéro.`); return; }
+  if (dlg.open && $("#fLot")) {
+    const cb = dlg.querySelector(`.lotcb[data-id="${a.id}"]`);
+    if (!cb) { toast(`${animalLabel(a)} n'est pas présent dans le troupeau.`); return; }
+    cb.checked = true; lotCount();
+    const tr = cb.closest("tr"); tr.hidden = false; dlg.querySelectorAll("tr.scan").forEach(r => r.classList.remove("scan")); tr.classList.add("scan"); tr.scrollIntoView({block: "center"});
+    toast(`${animalLabel(a)} coché`); return;
+  }
   if (dlg.open && $("#fWeigh")) {
     const w = document.getElementById("w_" + a.id);
     if (!w) { toast(`${animalLabel(a)} n'est pas dans ce lot${a.lot ? ` (lot « ${a.lot} »)` : ""}.`); return; }
@@ -1286,11 +1293,91 @@ function handleScan(raw) {
 }
 if (window.TagScanner) TagScanner.start(handleScan);
 
+/* ---------- lots ---------- */
+// Un lot existe dès qu'au moins un animal y est rangé (champ « lot » de l'animal) : rien d'autre à stocker.
+const byTravail = (x, y) => norm(x.numero).slice(-4).localeCompare(norm(y.numero).slice(-4));
+function lotsInfo() {
+  const m = new Map();
+  for (const a of presents()) if (a.lot) { if (!m.has(a.lot)) m.set(a.lot, []); m.get(a.lot).push(a); }
+  return [...m.entries()].sort((x, y) => x[0].localeCompare(y[0], "fr", {numeric: true}));
+}
+function compo(list) {
+  const c = {}; list.forEach(a => { const k = a.categorie || "Autre"; c[k] = (c[k] || 0) + 1; });
+  return Object.entries(c).sort((x, y) => y[1] - x[1]).map(([k, n]) => `${n} ${k.toLowerCase()}${n > 1 && !/[sx]$/.test(k) ? (/au$/.test(k) ? "x" : "s") : ""}`).join(" · ");
+}
+function lotsDlg() {
+  const l = lotsInfo(), sans = presents().filter(a => !a.lot).length;
+  openDlg(`<div class="dlg-head"><h3>Lots</h3><button class="close" data-act="close" aria-label="Fermer">×</button></div>
+  <div class="dlg-body">
+    ${l.length ? `<div class="tablebox"><table><thead><tr><th>Lot</th><th class="n">Animaux</th><th>Composition</th><th></th></tr></thead><tbody>
+      ${l.map(([n, as]) => `<tr data-act="lot-voir" data-lot="${esc(n)}"><td><b>${esc(n)}</b></td><td class="n">${as.length}</td><td class="wrap">${esc(compo(as))}</td><td class="n" style="white-space:nowrap"><button class="btn ghost sm" data-act="lot-voir" data-lot="${esc(n)}">Voir</button>${readOnly ? "" : `<button class="btn sm" data-act="lot-edit" data-lot="${esc(n)}">Modifier</button>`}</td></tr>`).join("")}
+    </tbody></table></div>` : `<p class="muted" style="margin:0">Aucun lot pour l'instant.</p>`}
+    <p class="hint" style="margin:0">${sans ? `${sans} anima${sans > 1 ? "ux présents" : "l présent"} sans lot.` : "Tous les animaux présents sont dans un lot."}</p>
+  </div>
+  ${readOnly ? "" : `<div class="dlg-foot"><button class="btn primary" data-act="lot-new">+ Nouveau lot</button></div>`}`);
+}
+let LOT = null;
+function lotForm(orig, init) {
+  const list = presents().sort(byTravail), lots = lotsInfo().map(x => x[0]);
+  const checked = new Set(orig ? list.filter(a => a.lot === orig).map(a => a.id) : (init || []));
+  LOT = {orig: orig || ""};
+  openDlg(`<form id="fLot">
+  <div class="dlg-head"><h3>${orig ? "Modifier le lot" : "Nouveau lot"}</h3><button type="button" class="close" data-act="close" aria-label="Fermer">×</button></div>
+  <div class="dlg-body">
+    ${fld("lotNom", "Nom du lot *", inp("lotNom", orig || "", "text", 'required maxlength="60" list="dlLotNoms" autocomplete="off" placeholder="Vaches stabu 1, Broutards 2026, Génisses à saillir…"') + `<datalist id="dlLotNoms">${lots.map(n => `<option value="${esc(n)}">`).join("")}</datalist>`)}
+    <div class="row"><input class="search" id="lotQ" type="search" placeholder="Filtrer : numéro, nom, catégorie, lot…" aria-label="Filtrer les animaux"><button type="button" class="btn sm" data-act="lot-all">Cocher les animaux affichés</button><button type="button" class="btn sm" data-act="lot-none">Tout décocher</button></div>
+    <p class="hint" id="lotCount" style="margin:0" role="status"></p>
+    <div class="tablebox" style="max-height:45vh;overflow:auto"><table><thead><tr><th style="width:34px"></th><th>Animal</th><th>Nom</th><th>Catégorie</th><th>Lot actuel</th></tr></thead><tbody>
+    ${list.map(a => `<tr data-act="lot-row" data-id="${esc(a.id)}" data-q="${esc([norm(a.numero), a.nom, a.categorie, a.lot, a.race, a.sexe].join(" ").toLowerCase())}"><td><input type="checkbox" class="lotcb" data-id="${esc(a.id)}" ${checked.has(a.id) ? "checked" : ""} aria-label="Mettre ${esc(animalLabel(a))} dans le lot"></td><td>${tagHTML(a.numero)}</td><td>${esc(a.nom || "")}</td><td>${esc(a.categorie || "")}</td><td class="muted">${esc(a.lot || "")}</td></tr>`).join("")}
+    </tbody></table></div>
+    <p class="hint" style="margin:0">Astuce : avec le lecteur de boucles, scannez les animaux pour les cocher.</p>
+  </div>
+  <div class="dlg-foot">${orig ? `<button type="button" class="btn danger" data-act="lot-dissoudre" data-lot="${esc(orig)}">Dissoudre le lot</button><span style="flex:1"></span>` : ""}<button type="button" class="btn" data-act="close">Annuler</button><button class="btn primary" type="submit">Enregistrer</button></div>
+  </form>`);
+  lotCount();
+  if (!orig) setTimeout(() => $("#lotNom")?.focus(), 50);
+}
+function lotCount() {
+  const el = $("#lotCount"); if (!el) return;
+  const n = dlg.querySelectorAll(".lotcb:checked").length;
+  el.textContent = `${n} anima${n > 1 ? "ux cochés" : "l coché"}.`;
+}
+function lotFilter(q) {
+  q = q.trim().toLowerCase().replace(/\s/g, "");
+  dlg.querySelectorAll("tr[data-act=lot-row]").forEach(tr => { tr.hidden = !!q && !tr.dataset.q.replace(/\s/g, "").includes(q); });
+}
+async function saveLot() {
+  const name = ($("#lotNom")?.value || "").trim().replace(/\s+/g, " ");
+  if (!name) return toast("Donnez un nom au lot.");
+  const orig = LOT?.orig || "", checked = new Set([...dlg.querySelectorAll(".lotcb:checked")].map(c => c.dataset.id));
+  if (!checked.size && !orig) return toast("Cochez au moins un animal.");
+  const items = [], set = (a, lot) => { const d = {...a}; delete d.id; if (lot) d.lot = lot; else delete d.lot; items.push({col: "animaux", id: a.id, data: d}); };
+  for (const a of S.animaux.values()) {
+    if (checked.has(a.id)) { if (a.lot !== name) set(a, name); }
+    else if (orig && a.lot === orig) {
+      // ancien membre décoché : retiré du lot ; animal sorti (absent de la liste) : suit le nouveau nom
+      if ((a.statut || "Présent") === "Présent") set(a, ""); else if (name !== orig) set(a, name);
+    }
+  }
+  if (!items.length) { closeDlg(); return toast("Aucun changement."); }
+  try { await Store.write(items); toast(`Lot « ${name} » : ${checked.size} anima${checked.size > 1 ? "ux" : "l"}.`); LOT = null; selected.clear(); closeDlg(); schedule(); }
+  catch (e) { handleErr(e); }
+}
+async function dissoudreLot(lot) {
+  const items = presents().filter(a => a.lot === lot).map(a => { const d = {...a}; delete d.id; delete d.lot; return {col: "animaux", id: a.id, data: d}; });
+  try { await Store.write(items); toast(`Lot « ${lot} » dissous : ${items.length} anima${items.length > 1 ? "ux" : "l"} sans lot.`); closeDlg(); }
+  catch (e) { handleErr(e); }
+}
+function voirLot(lot) {
+  UI.f = {q:"", statut:["Présent"], sexe:[], categorie:[], race:[], lot:[lot], repro:[], delai:[], ageMin:"", ageMax:""};
+  saveUI(); closeDlg(); view = "animaux"; try { history.replaceState(null, "", "#animaux"); } catch {} selected.clear(); window.scrollTo(0, 0); schedule();
+}
+
 /* ---------- barre de sélection ---------- */
 function renderBulk() {
   const el = $("#bulk");
   if (view !== "animaux" || !selected.size || readOnly) { el.innerHTML = ""; return; }
-  el.innerHTML = `<div class="bulkbar"><b>${selected.size} sélectionné${selected.size>1?"s":""}</b><button class="btn primary" data-act="bulk-event">Ajouter un évènement</button><button class="btn" data-act="clear-sel">Désélectionner</button></div>`;
+  el.innerHTML = `<div class="bulkbar"><b>${selected.size} sélectionné${selected.size>1?"s":""}</b><button class="btn primary" data-act="bulk-event">Ajouter un évènement</button><button class="btn" data-act="bulk-lot">Mettre dans un lot</button><button class="btn" data-act="clear-sel">Désélectionner</button></div>`;
 }
 
 /* ---------- toast ---------- */
@@ -1334,6 +1421,16 @@ document.addEventListener("click", e => {
     case "do-import": runImport(); break;
     case "account": accountDlg(); break;
     case "add-tags": addTagsForm(); break;
+    case "lots": lotsDlg(); break;
+    case "lot-new": lotForm(null); break;
+    case "bulk-lot": lotForm(null, [...selected]); break;
+    case "lot-edit": lotForm(t.dataset.lot); break;
+    case "lot-voir": voirLot(t.dataset.lot); break;
+    case "lot-row": { const cb = t.querySelector(".lotcb"); if (cb && e.target !== cb) cb.checked = !cb.checked; lotCount(); break; }
+    case "lot-all": dlg.querySelectorAll("tr[data-act=lot-row]:not([hidden]) .lotcb").forEach(c => c.checked = true); lotCount(); break;
+    case "lot-none": dlg.querySelectorAll(".lotcb").forEach(c => c.checked = false); lotCount(); break;
+    case "lot-dissoudre": confirmDlg("Dissoudre le lot ?", `Les animaux du lot « ${esc(t.dataset.lot)} » n'auront plus de lot. Les animaux eux-mêmes ne sont pas supprimés.`, "do-lot-dissoudre", "", "Dissoudre"); dlg.querySelector("[data-act=do-lot-dissoudre]").dataset.lot = t.dataset.lot; break;
+    case "do-lot-dissoudre": dissoudreLot(t.dataset.lot); break;
     case "ede-ok": edeMark([id], t.dataset.k, todayISO()).then(o => { if (o) { toast(t.dataset.k === "sortie" ? "Sortie marquée notifiée." : "Naissance marquée notifiée."); if (dlg.open && $("dialog[open] .info")) showAnimal(id); } }); break;
     case "ede-undo": edeMark([id], t.dataset.k, null).then(o => { if (o) { toast("Remis dans la liste à notifier."); showAnimal(id); } }); break;
     case "ede-all": { const st = notifState(), l = (t.dataset.k === "sortie" ? st.sorties : st.naiss).map(x => x.a.id);
@@ -1380,6 +1477,7 @@ document.addEventListener("input", e => {
   const t = e.target;
   if (t.id === "q") { UI.f.q = t.value; clearTimeout(qT); qT = setTimeout(() => { saveUI(); const pos = t.selectionStart; render(); const n = $("#q"); if (n) { n.focus(); try { n.setSelectionRange(pos, pos); } catch {} } }, 220); }
   if (t.id === "tFirst" || t.id === "tCount") tagsPreview();
+  if (t.id === "lotQ") lotFilter(t.value);
   if (t.id === "ageMin" || t.id === "ageMax") { UI.f[t.id] = t.value; clearTimeout(qT); qT = setTimeout(() => { saveUI(); render(); const n = $("#" + t.id); if (n) n.focus(); }, 400); }
 });
 document.addEventListener("change", e => {
@@ -1399,6 +1497,7 @@ document.addEventListener("submit", e => {
   e.preventDefault(); const f = e.target;
   if (f.id === "fLogin") return onLogin(f, false);
   if (f.id === "fTags") return saveTags();
+  if (f.id === "fLot") return saveLot();
   if (f.id === "fFarm") { const n = $("#farmName").value.trim(); if (!n) return; if (!navigator.onLine) return toast("Connexion internet nécessaire pour créer l'exploitation."); f.querySelectorAll("button").forEach(b => b.disabled = true); Store.createFarm(n).catch(err => { toast(err.message); f.querySelectorAll("button").forEach(b => b.disabled = false); }); return; }
   if (f.id === "fInvite") { const em = $("#invEmail").value.trim(), r = $("#invRole").value; Store.invite(em, r).then(() => { toast(`Invitation enregistrée pour ${em}.`); loadMembers(); inviteMail(em, r); }, err => toast(err.message)); return; }
   if (f.id === "fPw") { Store.updatePassword($("#newPw").value).then(() => { toast("Mot de passe modifié."); f.hidden = true; }, err => toast(err.message)); return; }
