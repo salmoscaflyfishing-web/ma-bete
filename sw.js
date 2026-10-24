@@ -1,6 +1,6 @@
 /* Service worker : met toute l'application en cache pour qu'elle s'ouvre et fonctionne sans réseau.
    Changer VERSION à chaque mise à jour de l'application pour que les appareils la reçoivent. */
-const VERSION = "1.9.1";
+const VERSION = "1.10.0";
 const CACHE = "registre-troupeau-" + VERSION;
 const FILES = [
   "./", "index.html", "config.js", "manifest.webmanifest",

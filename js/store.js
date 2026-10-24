@@ -1,4 +1,4 @@
-/* Ma Bête — stockage local (IndexedDB), file d'attente hors ligne et synchronisation Supabase.
+/* GAEC Du Mas Rondole — stockage local (IndexedDB), file d'attente hors ligne et synchronisation Supabase.
    Les données sont toujours lues et écrites d'abord sur l'appareil ; les modifications d'une exploitation
    partagée partent dans une file d'attente (« outbox ») envoyée dès que le réseau et la session le permettent. */
 (() => {

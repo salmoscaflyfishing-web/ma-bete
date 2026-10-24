@@ -1,4 +1,4 @@
-# Ma Bête 🐄
+# GAEC Du Mas Rondole 🐄
 
 *Le carnet d'étable de votre troupeau.*
 
@@ -109,7 +109,7 @@ Ce réglage permet aux liens reçus par e-mail (confirmation de compte, mot de p
 1. Ouvrez **Chrome** sur le téléphone et allez sur l'adresse de l'application. Connectez-vous.
 2. Touchez le menu **⋮** (en haut à droite) → **Installer l'application** (ou **Ajouter à l'écran d'accueil** → **Installer**).
    Vous pouvez aussi passer par le menu **Compte** de l'application → **Installer l'application**.
-3. L'icône jaune **Ma Bête** apparaît sur l'écran d'accueil. Elle s'ouvre en plein écran, comme une application normale.
+3. L'icône jaune **Mas Rondole** apparaît sur l'écran d'accueil. Elle s'ouvre en plein écran, comme une application normale.
 4. Ouvrez-la une première fois avec du réseau : tout est alors gardé sur le téléphone, et elle s'ouvrira ensuite **même sans réseau** (en stabulation, au pré…).
 
 **Sur iPhone** : ouvrez l'adresse dans **Safari** → bouton **Partager** (carré avec une flèche) → **Sur l'écran d'accueil** → **Ajouter**.
@@ -159,7 +159,7 @@ Onglet **Animaux** → bouton **Lots** : la liste des lots avec le nombre d'anim
 
 ### Saillies naturelles (taureau dans le lot)
 
-- Dès qu'un **taureau** (catégorie « Taureau ») et une **femelle de plus d'un an** sont dans le même lot, Ma Bête ajoute à la femelle un évènement **« Saillie / IA » – Saillie naturelle** avec le nom du taureau, daté du début de leur présence commune (date du formulaire de lot).
+- Dès qu'un **taureau** (catégorie « Taureau ») et une **femelle de plus d'un an** sont dans le même lot, l'application ajoute à la femelle un évènement **« Saillie / IA » – Saillie naturelle** avec le nom du taureau, daté du début de leur présence commune (date du formulaire de lot).
 - Une femelle qui a vêlé n'est comptée qu'à partir de **vêlage + 30 jours** (si elle entre plus tôt, la saillie est datée de ce jour-là). Une femelle déjà diagnostiquée gestante n'en reçoit pas.
 - **Changement de taureau** en cours de saison : une nouvelle saillie avec le nouveau taureau est ajoutée ; le **vêlage prévu** reste calculé depuis la **première** mise au taureau (+ 285 jours) et la colonne Taureau affiche « TITAN puis URBAIN ».
 - Alerte au tableau de bord à l'approche du terme : « Vêlage possible dans N j (saillie naturelle non confirmée) » ; un diagnostic de gestation positif la transforme en « Vêlage prévu ».
@@ -180,7 +180,7 @@ Onglet **Reproduction** → **Boucles pour les veaux** → **+ Ajouter des boucl
 
 ## Naissances et sorties à notifier à l'EDE
 
-Ma Bête ne peut pas se connecter au site de l'EDE (pas d'accès ouvert aux applications). Pour éviter la double saisie, tout se saisit une fois dans Ma Bête, puis le tableau de bord affiche la rubrique **« À notifier à l'EDE »** :
+L'application ne peut pas se connecter au site de l'EDE (pas d'accès ouvert aux applications). Pour éviter la double saisie, tout se saisit une fois dans l'application, puis le tableau de bord affiche la rubrique **« À notifier à l'EDE »** :
 
 - **Naissances** : chaque veau né sur l'exploitation (vêlage saisi ou animal ajouté) avec ce que demande l'EDE : n° du veau, date, sexe, race et son code (ex. Aubrac (14)), mère, père.
 - **Sorties** : ventes, morts, réformes, avec date et motif.
@@ -190,7 +190,7 @@ Ma Bête ne peut pas se connecter au site de l'EDE (pas d'accès ouvert aux appl
 
 ## Sauvegardes
 
-**Compte** → **Exporter une sauvegarde** crée un fichier `ma-bete-AAAA-MM-JJ.json` avec tous les animaux, évènements et boucles en stock. Gardez-en une copie de temps en temps (e-mail, clé USB).
+**Compte** → **Exporter une sauvegarde** crée un fichier `mas-rondole-AAAA-MM-JJ.json` avec tous les animaux, évènements et boucles en stock. Gardez-en une copie de temps en temps (e-mail, clé USB).
 
 **Compte** → **Restaurer une sauvegarde** relit ce fichier (ou votre ancien fichier au format `{"format":"registre-troupeau","version":1,…}`), au choix :
 - **Fusionner** : ajoute et met à jour, sans rien supprimer ;

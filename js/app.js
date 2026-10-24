@@ -332,7 +332,7 @@ function velagesAnnee(yr) {
 }
 
 /* ---- notifications à l'EDE (naissances et sorties) ----
-   Une naissance ou une sortie saisie dans Ma Bête reste « à notifier » jusqu'à ce qu'on touche « Notifié ».
+   Une naissance ou une sortie saisie dans l'application reste « à notifier » jusqu'à ce qu'on touche « Notifié ».
    Les animaux venus d'un import EDE sont déjà connus de l'EDE. Les évènements antérieurs à NOTIF_DEPUIS
    (mise en service de cette fonction) ne sont pas listés. */
 const NOTIF_DEPUIS = "2026-10-01";
@@ -1115,7 +1115,7 @@ async function exportCSV() {
 }
 
 /* ---------- application installable, mises à jour ---------- */
-const APP_VERSION = "1.9.1";
+const APP_VERSION = "1.10.0";
 let swWaiting = null, installEvt = null, localN = 0;
 if ("serviceWorker" in navigator && location.protocol !== "file:") {
   window.addEventListener("load", () => {
@@ -1253,8 +1253,8 @@ async function loadMembers() {
 }
 function inviteMail(email, role) {
   const url = location.origin + location.pathname;
-  const body = `Bonjour,\n\nJe vous invite sur Ma Bête, le carnet d'étable du troupeau de l'exploitation « ${Store.state.farmName} » (rôle : ${ROLES[role] || role}).\n\n1. Ouvrez ${url}\n2. Touchez « Créer un compte » avec cette adresse e-mail : ${email}\n3. Confirmez votre adresse avec le lien reçu par e-mail, puis connectez-vous.\n\nLe registre de l'exploitation apparaîtra automatiquement. Vous pouvez ensuite installer l'application depuis le menu du navigateur.\n`;
-  location.href = `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent("Invitation à Ma Bête")}&body=${encodeURIComponent(body)}`;
+  const body = `Bonjour,\n\nJe vous invite sur l'application « GAEC Du Mas Rondole », le carnet d'étable du troupeau de l'exploitation « ${Store.state.farmName} » (rôle : ${ROLES[role] || role}).\n\n1. Ouvrez ${url}\n2. Touchez « Créer un compte » avec cette adresse e-mail : ${email}\n3. Confirmez votre adresse avec le lien reçu par e-mail, puis connectez-vous.\n\nLe registre de l'exploitation apparaîtra automatiquement. Vous pouvez ensuite installer l'application depuis le menu du navigateur.\n`;
+  location.href = `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent("Invitation – GAEC Du Mas Rondole")}&body=${encodeURIComponent(body)}`;
 }
 
 /* ---------- sauvegarde / restauration (fichier JSON) ---------- */
@@ -1262,7 +1262,7 @@ function exportBackup() {
   const o = {format: "registre-troupeau", version: 1, exporteLe: new Date().toISOString()};
   if (Store.state.farmName) o.exploitation = Store.state.farmName;
   COLS_DB.forEach(c => { o[c] = Object.fromEntries([...S[c]].map(([k, v]) => { const {id, ...r} = v; return [k, r]; })); });
-  try { download(`ma-bete-${todayISO()}.json`, JSON.stringify(o, null, 1), "application/json"); toast(`Sauvegarde exportée : ${S.animaux.size} animaux, ${S.evenements.size} évènements, ${S.boucles.size} boucles.`); }
+  try { download(`mas-rondole-${todayISO()}.json`, JSON.stringify(o, null, 1), "application/json"); toast(`Sauvegarde exportée : ${S.animaux.size} animaux, ${S.evenements.size} évènements, ${S.boucles.size} boucles.`); }
   catch { toast("Export impossible sur cet appareil."); }
 }
 let RESTORE = null;
@@ -1284,7 +1284,7 @@ async function onRestoreFile(input) {
   const file = input.files && input.files[0]; if (!file) return;
   let o; try { o = JSON.parse((await file.text()).replace(/^﻿/, "")); } catch { return toast("Ce fichier n'est pas une sauvegarde lisible (JSON invalide)."); }
   RESTORE = parseBackup(o);
-  if (!RESTORE) return toast("Ce fichier n'est pas une sauvegarde de Ma Bête.");
+  if (!RESTORE) return toast("Ce fichier n'est pas une sauvegarde de l'application.");
   const n = c => RESTORE[c].size;
   openDlg(`<div class="dlg-head"><h3>Restaurer une sauvegarde</h3><button class="close" data-act="close" aria-label="Fermer">×</button></div>
   <div class="dlg-body">
