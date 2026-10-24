@@ -39,6 +39,7 @@ const EV = {
   "Traitement": {g:"sante", f:[["produit","Produit","text"],["motif","Motif","text"],["dose","Dose / voie","text"],["delaiViande","Délai d'attente viande (jours)","number"],["veterinaire","Vétérinaire","text"],["ordonnance","N° d'ordonnance","text"]]},
   "Vaccination": {g:"sante", f:[["produit","Vaccin","text"],["motif","Maladie visée","text"],["delaiViande","Délai d'attente viande (jours)","number"]]},
   "Note": {g:"note", f:[]},
+  "Changement de lot": {g:"lot", f:[], interne:true}, // créé automatiquement, pas dans le formulaire
 };
 const BULK_OK = ["Traitement","Vaccination","Saillie / IA","Chaleur","Note"];
 
@@ -48,10 +49,23 @@ const COLS_DB = Store.COLS;
 let mode = "init", readOnly = false;
 const loaded = { animaux:false, evenements:false, finances:false, boucles:false };
 
-async function put(col, id, data) {
+async function put(col, id, data, opts = {}) {
   const clean = {}; Object.entries(data).forEach(([k, v]) => { if (k !== "id" && v !== undefined) clean[k] = v; });
-  try { await Store.put(col, id, clean); }
+  const item = {col, id, data: clean};
+  try { await Store.write([item, ...lotChangeItems([item], opts.lotDate)]); }
   catch (e) { handleErr(e); throw e; }
+}
+/* historique des lots : un évènement « Changement de lot » à chaque fois que le lot d'un animal change */
+const LOT_EV = "Changement de lot";
+function lotChangeItems(items, date, skip) {
+  const out = [], saisi = new Date().toISOString();
+  for (const it of items) {
+    if (it.col !== "animaux" || it.deleted) continue;
+    const avant = S.animaux.get(it.id)?.lot || "", apres = (it.data && it.data.lot) || "";
+    if (avant === apres || (skip && skip(avant, apres))) continue;
+    out.push({col: "evenements", id: newId(), data: {type: LOT_EV, date: date || todayISO(), animal: it.id, lotAvant: avant, lotApres: apres, saisi}});
+  }
+  return out;
 }
 async function del(col, id) {
   try { await Store.del(col, id); } catch (e) { handleErr(e); throw e; }
@@ -377,7 +391,7 @@ function vTableau() {
   const velAn = velagesAnnee(yr);
   const alerts = buildAlerts();
   const max = Math.max(1, ...Object.values(byCat));
-  const recent = [...S.evenements.values()].sort((a, b) => (b.date || "").localeCompare(a.date || "")).slice(0, 8);
+  const recent = [...S.evenements.values()].filter(e => e.type !== LOT_EV).sort((a, b) => (b.date || "").localeCompare(a.date || "")).slice(0, 8);
   return `
   <div class="spread"><h2>Tableau de bord</h2>${readOnly ? "" : `<div class="row"><button class="btn" data-act="new-event">+ Évènement</button><button class="btn primary" data-act="new-animal">+ Animal</button></div>`}</div>
   <div class="kpis">
@@ -644,6 +658,7 @@ function evDetail(e) {
   if (e.type === "Diagnostic gestation") p.push([e.resultat, e.methode].filter(Boolean).join(" · "));
   if (e.type === "Vêlage") p.push([e.facilite, e.veauSexe && `veau ${e.veauSexe}`, e.veauPoids && `${e.veauPoids} kg`, e.veauEtat].filter(Boolean).join(" · "));
   if (e.type === "Traitement" || e.type === "Vaccination") p.push([e.produit, e.motif, e.dose, +e.delaiViande > 0 && `attente ${e.delaiViande} j`, e.veterinaire].filter(Boolean).join(" · "));
+  if (e.type === LOT_EV) p.push(`${e.lotAvant || "sans lot"} → ${e.lotApres || "sans lot"}`);
   if (e.commentaire) p.push(e.commentaire);
   return p.filter(Boolean).join(" — ");
 }
@@ -693,6 +708,7 @@ function showAnimal(id) {
   <div class="dlg-body">
     <div class="row"><span class="pill ${s==="Présent"?"ok":s==="Mort"?"crit":""}">${esc(s)}</span>${reproPill(d)}${d.enDelai ? `<span class="pill crit">Délai d'attente jusqu'au ${fmtD(d.finDelai)}</span>` : ""}${d.aDiagnostiquer ? `<span class="pill info">Diagnostic à faire</span>` : ""}</div>
     <div class="info">${info}</div>
+    ${lotsSuccessifs(a)}
     ${edeFiche(a)}
     ${a.notes ? `<p style="margin:0">${esc(a.notes)}</p>` : ""}
     ${d.pesees.length > 1 ? `<div><span class="flabel">Croissance</span>${sparkline(d.pesees)}</div>` : ""}
@@ -738,7 +754,7 @@ function animalForm(id) {
 
 function eventForm({animalIds = [], type = "Pesée"} = {}) {
   const bulk = animalIds.length > 1;
-  const types = bulk ? BULK_OK : Object.keys(EV);
+  const types = bulk ? BULK_OK : Object.keys(EV).filter(k => !EV[k].interne);
   if (!types.includes(type)) type = types[0];
   const opts = [...S.animaux.values()].filter(a => (a.statut||"Présent")==="Présent").sort((a,b)=>norm(a.numero).slice(-4).localeCompare(norm(b.numero).slice(-4)));
   const one = animalIds.length === 1 ? S.animaux.get(animalIds[0]) : null;
@@ -832,7 +848,7 @@ async function saveEvent(form) {
         const veau = {numero: vn, nom: base.veauNom || "", sexe: base.veauSexe || "F", race: m?.race || "", categorie: "Veau", lot: "Veaux " + date.slice(0,4),
           naissance: date, mere: norm(m?.numero), pere: lastBull(ids[0]) || "", origine: "Né sur l'exploitation", dateEntree: date, statut: "Présent"};
         if (base.veauPoids) veau.poidsNaissance = base.veauPoids;
-        await put("animaux", newId(), veau);
+        await put("animaux", newId(), veau, {lotDate: date});
       }
     }
     if (type === "Vêlage") { const m = S.animaux.get(ids[0]); if (m && m.categorie === "Génisse") await put("animaux", m.id, {...m, categorie: "Vache"}); }
@@ -1039,7 +1055,7 @@ async function runImport() {
   for (let i = 0; i < items.length; i += 100) {
     const part = items.slice(i, i + 100);
     btn.textContent = `Import… ${Math.min(i + 100, items.length)} / ${items.length}`;
-    try { await Store.write(part); ok += part.length; } catch (e) { fail += part.length; if (e && e.code === "readonly") { readOnly = true; break; } }
+    try { await Store.write([...part, ...lotChangeItems(part)]); ok += part.length; } catch (e) { fail += part.length; if (e && e.code === "readonly") { readOnly = true; break; } }
   }
   closeDlg(); IMP = null; schedule();
   toast(fail ? `${ok} animaux importés, ${fail} en échec. Relancez l'import pour compléter.` : `${ok} animaux importés.`);
@@ -1063,7 +1079,7 @@ async function exportCSV() {
 }
 
 /* ---------- application installable, mises à jour ---------- */
-const APP_VERSION = "1.6.0";
+const APP_VERSION = "1.7.0";
 let swWaiting = null, installEvt = null, localN = 0;
 if ("serviceWorker" in navigator && location.protocol !== "file:") {
   window.addEventListener("load", () => {
@@ -1325,6 +1341,7 @@ function lotForm(orig, init) {
   <div class="dlg-head"><h3>${orig ? "Modifier le lot" : "Nouveau lot"}</h3><button type="button" class="close" data-act="close" aria-label="Fermer">×</button></div>
   <div class="dlg-body">
     ${fld("lotNom", "Nom du lot *", inp("lotNom", orig || "", "text", 'required maxlength="60" list="dlLotNoms" autocomplete="off" placeholder="Vaches stabu 1, Broutards 2026, Génisses à saillir…"') + `<datalist id="dlLotNoms">${lots.map(n => `<option value="${esc(n)}">`).join("")}</datalist>`)}
+    ${fld("lotDate", "Date du changement", inp("lotDate", todayISO(), "date", "required"))}
     <div class="row"><input class="search" id="lotQ" type="search" placeholder="Filtrer : numéro, nom, catégorie, lot…" aria-label="Filtrer les animaux"><button type="button" class="btn sm" data-act="lot-all">Cocher les animaux affichés</button><button type="button" class="btn sm" data-act="lot-none">Tout décocher</button></div>
     <p class="hint" id="lotCount" style="margin:0" role="status"></p>
     <div class="tablebox" style="max-height:45vh;overflow:auto"><table><thead><tr><th style="width:34px"></th><th>Animal</th><th>Nom</th><th>Catégorie</th><th>Lot actuel</th></tr></thead><tbody>
@@ -1360,13 +1377,35 @@ async function saveLot() {
     }
   }
   if (!items.length) { closeDlg(); return toast("Aucun changement."); }
-  try { await Store.write(items); toast(`Lot « ${name} » : ${checked.size} anima${checked.size > 1 ? "ux" : "l"}.`); LOT = null; selected.clear(); closeDlg(); schedule(); }
+  const date = $("#lotDate")?.value || todayISO(), rename = orig && name !== orig;
+  // un simple renommage n'est pas un déplacement : on renomme le lot dans l'historique au lieu d'ajouter un évènement
+  const evs = lotChangeItems(items, date, (av, ap) => rename && av === orig && ap === name).map(x => { if (rename && x.data.lotAvant === orig) x.data.lotAvant = name; return x; });
+  if (rename) for (const e of S.evenements.values()) if (e.type === LOT_EV && (e.lotAvant === orig || e.lotApres === orig)) {
+    const d = {...e}; delete d.id; if (d.lotAvant === orig) d.lotAvant = name; if (d.lotApres === orig) d.lotApres = name; evs.push({col: "evenements", id: e.id, data: d});
+  }
+  try { await Store.write([...items, ...evs]); toast(`Lot « ${name} » : ${checked.size} anima${checked.size > 1 ? "ux" : "l"}.`); LOT = null; selected.clear(); closeDlg(); schedule(); }
   catch (e) { handleErr(e); }
 }
 async function dissoudreLot(lot) {
   const items = presents().filter(a => a.lot === lot).map(a => { const d = {...a}; delete d.id; delete d.lot; return {col: "animaux", id: a.id, data: d}; });
-  try { await Store.write(items); toast(`Lot « ${lot} » dissous : ${items.length} anima${items.length > 1 ? "ux" : "l"} sans lot.`); closeDlg(); }
+  try { await Store.write([...items, ...lotChangeItems(items)]); toast(`Lot « ${lot} » dissous : ${items.length} anima${items.length > 1 ? "ux" : "l"} sans lot.`); closeDlg(); }
   catch (e) { handleErr(e); }
+}
+function lotsSuccessifs(a) {
+  const evs = (evByAnimal.get(a.id) || []).filter(e => e.type === LOT_EV).sort((x, y) => (x.date || "").localeCompare(y.date || "") || (x.saisi || "").localeCompare(y.saisi || ""));
+  const titre = `<span class="flabel">Lots successifs</span>`;
+  if (!evs.length) return a.lot ? `<div class="fgroup">${titre}<p class="hint" style="margin:0"><b>${esc(a.lot)}</b> — date d'entrée inconnue (avant le suivi des lots).</p></div>` : "";
+  const per = [];
+  if (evs[0].lotAvant) per.push({lot: evs[0].lotAvant, debut: null, fin: evs[0].date});
+  evs.forEach((e, i) => { if (e.lotApres) per.push({lot: e.lotApres, debut: e.date, fin: evs[i + 1] ? evs[i + 1].date : null}); });
+  if (!per.length) return "";
+  const sortie = (a.statut || "Présent") !== "Présent" && a.dateSortie ? a.dateSortie : null, today = todayISO();
+  return `<div class="fgroup">${titre}<div class="tablebox"><table><thead><tr><th>Lot</th><th>Période</th><th class="n">Durée</th></tr></thead><tbody>
+  ${per.map(p => { const fin = p.fin || sortie, actuel = !p.fin && !sortie;
+    const periode = !p.debut ? `jusqu'au ${fmtD(p.fin)}` : fin ? `du ${fmtD(p.debut)} au ${fmtD(fin)}` : `depuis le ${fmtD(p.debut)}`;
+    const j = p.debut ? days(p.debut, fin || today) : null;
+    return `<tr><td>${actuel ? `<b>${esc(p.lot)}</b> <span class="pill ok">actuel</span>` : esc(p.lot)}</td><td>${periode}</td><td class="n">${j == null ? "" : `${fmtN(j)} j`}</td></tr>`; }).join("")}
+  </tbody></table></div></div>`;
 }
 function voirLot(lot) {
   UI.f = {q:"", statut:["Présent"], sexe:[], categorie:[], race:[], lot:[lot], repro:[], delai:[], ageMin:"", ageMax:""};

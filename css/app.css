@@ -196,3 +196,4 @@ label.btn input[type=file]{display:none}
 .pill.info{display:inline-block}
 .panel.attention{border:2px solid var(--warn);background:linear-gradient(var(--warn-bg),var(--surface) 70px)}
 .panel.attention h3{color:var(--warn)}
+.ev.lot::before{background:var(--tag)}

@@ -148,6 +148,7 @@ Onglet **Animaux** → bouton **Lots** : la liste des lots avec le nombre d'anim
 - Depuis la liste Animaux, sélectionnez des animaux puis **Mettre dans un lot** (lot nouveau ou existant).
 - **Modifier** : changer les animaux du lot ou le renommer. **Dissoudre le lot** retire le lot des animaux, sans les supprimer.
 - **Voir** affiche le lot dans la liste Animaux ; les lots sont aussi proposés pour les séances de pesée.
+- **Historique** : chaque changement de lot est daté (date choisie dans le formulaire de lot, aujourd'hui par défaut) et apparaît dans l'historique de la fiche. La fiche affiche aussi le récapitulatif **« Lots successifs »** avec les périodes et durées. Renommer un lot ne compte pas comme un déplacement. Le suivi commence avec la version 1.7.0 (avant, la date d'entrée est inconnue).
 
 ## Stock de boucles pour les veaux
 
