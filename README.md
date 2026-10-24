@@ -164,6 +164,7 @@ Onglet **Animaux** → bouton **Lots** : la liste des lots avec le nombre d'anim
 - **Changement de taureau** en cours de saison : une nouvelle saillie avec le nouveau taureau est ajoutée ; le **vêlage prévu** reste calculé depuis la **première** mise au taureau (+ 285 jours) et la colonne Taureau affiche « TITAN puis URBAIN ».
 - Alerte au tableau de bord à l'approche du terme : « Vêlage possible dans N j (saillie naturelle non confirmée) » ; un diagnostic de gestation positif la transforme en « Vêlage prévu ».
 - **Historique du taureau** : la fenêtre **Lots** affiche, pour chaque lot, les taureaux présents avec leurs dates (« TITAN du 01/06 au 15/07, URBAIN depuis le 15/07 ») ; la fiche du taureau montre ses « Lots successifs ».
+- Si la vache **vêle** moins de 255 jours après une saillie automatique (elle était donc déjà pleine), la saillie est **annulée automatiquement** et une nouvelle est comptée à **vêlage + 30 jours** si le taureau est toujours là.
 - Si une date saisie après coup montre que le taureau n'était pas dans le lot, la saillie automatique est retirée. Une saillie automatique supprimée à la main (✕) n'est pas recréée.
 
 ## Stock de boucles pour les veaux

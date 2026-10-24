@@ -1115,7 +1115,7 @@ async function exportCSV() {
 }
 
 /* ---------- application installable, mises à jour ---------- */
-const APP_VERSION = "1.9.0";
+const APP_VERSION = "1.9.1";
 let swWaiting = null, installEvt = null, localN = 0;
 if ("serviceWorker" in navigator && location.protocol !== "file:") {
   window.addEventListener("load", () => {
@@ -1350,7 +1350,8 @@ if (window.TagScanner) TagScanner.start(handleScan);
    (méthode « Saillie naturelle ») est créé pour la femelle, daté du début de leur présence commune,
    et jamais avant son dernier vêlage + 30 jours. Un nouvel évènement est créé à chaque nouveau taureau.
    L'identifiant est fixe par femelle, taureau et cycle : pas de doublon, même entre plusieurs appareils. */
-const SN_APRES_VELAGE = 30, SN_DEJA_PLEINE = 240;
+// un vêlage moins de SN_DEJA_PLEINE jours après la mise au taureau prouve que la femelle était déjà pleine
+const SN_APRES_VELAGE = 30, SN_DEJA_PLEINE = 255;
 const estTaureau = a => a.sexe === "M" && a.categorie === "Taureau";
 const taureauLabel = t => [t.nom, `(${norm(t.numero).slice(-4)})`].filter(Boolean).join(" ");
 // périodes de présence dans les lots : [{lot, debut, fin}] (debut null = inconnu ; fin null = en cours)
@@ -1408,15 +1409,17 @@ function sailliesAFaire() {
   }
   return out;
 }
-// saillies automatiques devenues fausses (taureau finalement absent du lot à cette date, saisie après coup)
+// saillies automatiques devenues fausses : taureau finalement absent du lot à cette date (saisie après coup),
+// ou vêlage survenu trop tôt après (la femelle était déjà pleine) : elle repart alors à vêlage + 30 jours
 function sailliesInvalides() {
   const out = [];
   for (const e of S.evenements.values()) {
     if (!e.auto || e.type !== "Saillie / IA" || !e.taureauId) continue;
     const f = S.animaux.get(e.animal), t = S.animaux.get(e.taureauId); if (!f || !t) continue;
     const dans = (per, d) => per.some(p => p.lot === e.lot && (!p.debut || p.debut <= d) && (!p.fin || p.fin >= d));
-    if (dans(periodesLots(t), e.date) && dans(periodesLots(f), e.date)) continue;
-    const d = {...e}; delete d.id; out.push({col: "evenements", id: e.id, data: d, deleted: true});
+    const pleine = velagesDe(f).some(v => v > e.date && days(e.date, v) <= SN_DEJA_PLEINE);
+    if (!pleine && dans(periodesLots(t), e.date) && dans(periodesLots(f), e.date)) continue;
+    const d = {...e}; delete d.id; out.push({col: "evenements", id: e.id, data: d, deleted: true, pleine});
   }
   return out;
 }
@@ -1430,7 +1433,8 @@ function planSaillies() {
     const add = sailliesAFaire().filter(x => !del.some(y => y.id === x.id)), items = [...del, ...add]; if (!items.length) return;
     snBusy = true;
     try { await Store.write(items);
-      toast([add.length && `${add.length} saillie${add.length > 1 ? "s naturelles enregistrées" : " naturelle enregistrée"} (taureau présent dans le lot)`, del.length && `${del.length} saillie${del.length > 1 ? "s automatiques retirées" : " automatique retirée"} (taureau absent du lot à cette date)`].filter(Boolean).join(" · ") + "."); }
+      toast([add.length && `${add.length} saillie${add.length > 1 ? "s naturelles enregistrées" : " naturelle enregistrée"} (taureau présent dans le lot)`, del.filter(x => x.pleine).length && `${del.filter(x => x.pleine).length} saillie${del.filter(x => x.pleine).length > 1 ? "s annulées" : " annulée"} (vêlage survenu : la vache était déjà pleine, nouvelle saillie comptée à vêlage + 30 j)`,
+      del.filter(x => !x.pleine).length && `${del.filter(x => !x.pleine).length} saillie${del.filter(x => !x.pleine).length > 1 ? "s automatiques retirées" : " automatique retirée"} (taureau absent du lot à cette date)`].filter(Boolean).join(" · ") + "."); }
     catch (e) { console.warn("saillies", e); } finally { snBusy = false; }
   }, 1500);
 }
