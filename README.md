@@ -157,6 +157,15 @@ Onglet **Animaux** → bouton **Lots** : la liste des lots avec le nombre d'anim
 - **Sevrage** : nouvel évènement (avec le poids au sevrage, compté comme une pesée), saisissable en groupe : sélectionnez les veaux dans la liste → « Ajouter un évènement » → Sevrage. Après le sevrage, le veau ne suit plus sa mère.
 - Garde-fou : un animal de plus de 12 mois ne suit plus sa mère, même sans sevrage saisi (animaux nés avant cette fonction). Renommer un lot ne déplace pas les veaux.
 
+### Saillies naturelles (taureau dans le lot)
+
+- Dès qu'un **taureau** (catégorie « Taureau ») et une **femelle de plus d'un an** sont dans le même lot, Ma Bête ajoute à la femelle un évènement **« Saillie / IA » – Saillie naturelle** avec le nom du taureau, daté du début de leur présence commune (date du formulaire de lot).
+- Une femelle qui a vêlé n'est comptée qu'à partir de **vêlage + 30 jours** (si elle entre plus tôt, la saillie est datée de ce jour-là). Une femelle déjà diagnostiquée gestante n'en reçoit pas.
+- **Changement de taureau** en cours de saison : une nouvelle saillie avec le nouveau taureau est ajoutée ; le **vêlage prévu** reste calculé depuis la **première** mise au taureau (+ 285 jours) et la colonne Taureau affiche « TITAN puis URBAIN ».
+- Alerte au tableau de bord à l'approche du terme : « Vêlage possible dans N j (saillie naturelle non confirmée) » ; un diagnostic de gestation positif la transforme en « Vêlage prévu ».
+- **Historique du taureau** : la fenêtre **Lots** affiche, pour chaque lot, les taureaux présents avec leurs dates (« TITAN du 01/06 au 15/07, URBAIN depuis le 15/07 ») ; la fiche du taureau montre ses « Lots successifs ».
+- Si une date saisie après coup montre que le taureau n'était pas dans le lot, la saillie automatique est retirée. Une saillie automatique supprimée à la main (✕) n'est pas recréée.
+
 ## Stock de boucles pour les veaux
 
 Onglet **Reproduction** → **Boucles pour les veaux** → **+ Ajouter des boucles** : saisissez le premier numéro de la série reçue de l'EDE (par ex. `FR 12 0123 8001`) et le nombre de boucles ; les numéros suivants sont calculés tout seuls (les boucles déjà en stock sont ignorées).

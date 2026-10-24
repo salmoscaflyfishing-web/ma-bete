@@ -110,7 +110,7 @@ function syncState() {
 }
 
 async function boot() {
-  Store.on("change", () => { syncState(); schedule(); });
+  Store.on("change", () => { syncState(); schedule(); planSaillies(); });
   Store.on("status", () => { syncState(); renderStatus(); schedule(); });
   Store.on("message", m => toast(m));
   await Store.init();
@@ -179,14 +179,19 @@ function derive() {
     }
     const eligible = a.sexe === "F" && (a.categorie === "Vache" || a.categorie === "Génisse");
     if (eligible) {
-      let st = "Vide", ia = null;
+      let st = "Vide", ia = null, taureaux = [];
+      const sn = e => e.methode === "Saillie naturelle";
       for (const e of timeline) {
-        if (e.type === "Vêlage" || e.type === "Avortement") { st = "Vide"; ia = null; }
-        else if (e.type === "Saillie / IA") { st = "Inséminée"; ia = e; }
+        if (e.type === "Vêlage" || e.type === "Avortement") { st = "Vide"; ia = null; taureaux = []; }
+        else if (e.type === "Saillie / IA") {
+          // taureaux successifs dans le lot : on garde la 1re mise au taureau (vêlage possible au plus tôt)
+          if (ia && sn(ia) && sn(e) && (st === "Inséminée" || st === "Gestante")) { if (e.taureau && !taureaux.includes(e.taureau)) taureaux.push(e.taureau); }
+          else { st = "Inséminée"; ia = e; taureaux = e.taureau ? [e.taureau] : []; }
+        }
         else if (e.type === "Diagnostic gestation") { st = e.resultat === "Positive" ? "Gestante" : "Vide"; if (st === "Vide") ia = null; }
       }
       d.repro = st;
-      if (ia && (st === "Gestante" || st === "Inséminée")) { d.velagePrevu = addDays(ia.date, GESTATION); d.dateIA = ia.date; d.taureau = ia.taureau; }
+      if (ia && (st === "Gestante" || st === "Inséminée")) { d.velagePrevu = addDays(ia.date, GESTATION); d.dateIA = ia.date; d.taureau = taureaux.join(" puis ") || ia.taureau; d.saillieNat = sn(ia); }
       if (st === "Inséminée" && ia && days(ia.date, today) >= DIAG_APRES) d.aDiagnostiquer = true;
       if (st === "Vide" && d.dernierVelage) d.joursVide = days(d.dernierVelage, today);
     }
@@ -440,7 +445,7 @@ function buildAlerts() {
   const today = todayISO(), out = [];
   for (const a of presents()) {
     const d = D.get(a.id);
-    if (d.velagePrevu && d.repro === "Gestante") { const j = days(today, d.velagePrevu); if (j <= 30) out.push({lvl: j <= 7 ? "crit" : "warn", a, t:`Vêlage prévu ${j < 0 ? `dépassé de ${-j} j` : j === 0 ? "aujourd'hui" : `dans ${j} j`}`, s:`Terme le ${fmtD(d.velagePrevu)}`, o: j}); }
+    if (d.velagePrevu && (d.repro === "Gestante" || d.repro === "Inséminée")) { const j = days(today, d.velagePrevu); if (j <= 30) out.push({lvl: j <= 7 ? "crit" : "warn", a, t:`Vêlage ${d.repro === "Gestante" ? "prévu" : "possible"} ${j < 0 ? `dépassé de ${-j} j` : j === 0 ? "aujourd'hui" : `dans ${j} j`}`, s:`Terme le ${fmtD(d.velagePrevu)}${d.repro === "Inséminée" ? ` (${d.saillieNat ? "saillie naturelle" : "IA"} non confirmée)` : ""}${d.taureau ? ` · ${d.taureau}` : ""}`, o: j}); }
     if (d.aDiagnostiquer) out.push({lvl:"info", a, t:"Diagnostic de gestation à faire", s:`IA / saillie le ${fmtD(d.dateIA)} (${days(d.dateIA, today)} j)`, o: 40});
     if (a.categorie === "Vache" && d.repro === "Vide" && d.joursVide > VIDE_ALERTE) out.push({lvl:"warn", a, t:`Vide depuis ${d.joursVide} j`, s:`Dernier vêlage le ${fmtD(d.dernierVelage)}`, o: 60});
     if (d.enDelai) out.push({lvl:"crit", a, t:"Délai d'attente viande en cours", s:`Ne pas vendre avant le ${fmtD(addDays(d.finDelai, 1))}`, o: 5});
@@ -1110,7 +1115,7 @@ async function exportCSV() {
 }
 
 /* ---------- application installable, mises à jour ---------- */
-const APP_VERSION = "1.8.0";
+const APP_VERSION = "1.9.0";
 let swWaiting = null, installEvt = null, localN = 0;
 if ("serviceWorker" in navigator && location.protocol !== "file:") {
   window.addEventListener("load", () => {
@@ -1340,6 +1345,105 @@ function handleScan(raw) {
 }
 if (window.TagScanner) TagScanner.start(handleScan);
 
+/* ---------- saillies naturelles (taureau présent dans le lot) ----------
+   Quand un taureau et une femelle de plus d'un an partagent un lot, un évènement « Saillie / IA »
+   (méthode « Saillie naturelle ») est créé pour la femelle, daté du début de leur présence commune,
+   et jamais avant son dernier vêlage + 30 jours. Un nouvel évènement est créé à chaque nouveau taureau.
+   L'identifiant est fixe par femelle, taureau et cycle : pas de doublon, même entre plusieurs appareils. */
+const SN_APRES_VELAGE = 30, SN_DEJA_PLEINE = 240;
+const estTaureau = a => a.sexe === "M" && a.categorie === "Taureau";
+const taureauLabel = t => [t.nom, `(${norm(t.numero).slice(-4)})`].filter(Boolean).join(" ");
+// périodes de présence dans les lots : [{lot, debut, fin}] (debut null = inconnu ; fin null = en cours)
+function periodesLots(a) {
+  const evs = (evByAnimal.get(a.id) || []).filter(e => e.type === LOT_EV).sort((x, y) => (x.date || "").localeCompare(y.date || "") || (x.saisi || "").localeCompare(y.saisi || ""));
+  const per = [];
+  if (!evs.length) { if (a.lot) per.push({lot: a.lot, debut: null, fin: null}); return per; }
+  if (evs[0].lotAvant) per.push({lot: evs[0].lotAvant, debut: null, fin: evs[0].date});
+  evs.forEach((e, i) => { if (e.lotApres) per.push({lot: e.lotApres, debut: e.date, fin: evs[i + 1] ? evs[i + 1].date : null}); });
+  const sortie = (a.statut || "Présent") !== "Présent" ? a.dateSortie : null;
+  if (sortie) per.forEach(p => { if (!p.fin || p.fin > sortie) p.fin = sortie; });
+  return per;
+}
+function velagesDe(f) {
+  const s = new Set();
+  (evByAnimal.get(f.id) || []).forEach(e => { if (e.type === "Vêlage" && e.date) s.add(e.date); });
+  if (f.numero) for (const k of S.animaux.values()) if (k.naissance && norm(k.mere) === norm(f.numero)) s.add(k.naissance);
+  return [...s].sort();
+}
+function sailliesAFaire() {
+  const today = todayISO(), out = [];
+  const taureaux = [...S.animaux.values()].filter(estTaureau);
+  if (!taureaux.length) return out;
+  const pt = taureaux.map(t => ({t, per: periodesLots(t)}));
+  for (const f of presents()) {
+    if (f.sexe !== "F") continue;
+    const perF = periodesLots(f); if (!perF.length) continue;
+    const vel = velagesDe(f), evs = evByAnimal.get(f.id) || [];
+    const resets = [...vel, ...evs.filter(e => e.type === "Avortement" || (e.type === "Diagnostic gestation" && e.resultat !== "Positive")).map(e => e.date)].sort();
+    for (const {t, per} of pt) for (const pb of per) for (const pf of perF) {
+      if (pb.lot !== pf.lot) continue;
+      // période commune ; un début inconnu est remplacé par aujourd'hui (première détection)
+      const s = [pb.debut || today, pf.debut || today].sort()[1], e = [pb.fin || today, pf.fin || today, today].sort()[0];
+      if (s > e) continue;
+      let c = s;
+      if (f.naissance) { const an = addDays(f.naissance, 365); if (c < an) c = an; }
+      for (let k = 0; k < 6; k++) {
+        const r = vel.filter(v => v <= c).pop();
+        if (r && c < addDays(r, SN_APRES_VELAGE)) c = addDays(r, SN_APRES_VELAGE);
+        const nxt = vel.find(v => v > c);
+        if (nxt && days(c, nxt) <= SN_DEJA_PLEINE) { c = nxt; continue; } // déjà pleine à cette date
+        break;
+      }
+      if (c > e || c > today) continue;
+      const cycle = resets.filter(x => x <= c).pop() || "0";
+      const id = `sn_${f.id}_${t.id}_${cycle}`;
+      if (S.evenements.has(id) || Store.DEL.evenements.has(id) || out.some(x => x.id === id)) continue;
+      // déjà gestante (diagnostic positif dans ce cycle) ou saillie déjà notée avec ce taureau : rien à ajouter
+      const duCycle = evs.filter(x => x.date >= (cycle === "0" ? "" : cycle) && x.date <= c);
+      if (duCycle.some(x => x.type === "Diagnostic gestation" && x.resultat === "Positive")) continue;
+      if (evs.some(x => x.type === "Saillie / IA" && x.taureauId === t.id && x.date >= (cycle === "0" ? "" : cycle))) continue;
+      out.push({col: "evenements", id, data: {type: "Saillie / IA", date: c, animal: f.id, methode: "Saillie naturelle", taureau: taureauLabel(t), taureauId: t.id, lot: pf.lot, auto: true,
+        commentaire: `Automatique : taureau présent dans le lot « ${pf.lot} »`}});
+    }
+  }
+  return out;
+}
+// saillies automatiques devenues fausses (taureau finalement absent du lot à cette date, saisie après coup)
+function sailliesInvalides() {
+  const out = [];
+  for (const e of S.evenements.values()) {
+    if (!e.auto || e.type !== "Saillie / IA" || !e.taureauId) continue;
+    const f = S.animaux.get(e.animal), t = S.animaux.get(e.taureauId); if (!f || !t) continue;
+    const dans = (per, d) => per.some(p => p.lot === e.lot && (!p.debut || p.debut <= d) && (!p.fin || p.fin >= d));
+    if (dans(periodesLots(t), e.date) && dans(periodesLots(f), e.date)) continue;
+    const d = {...e}; delete d.id; out.push({col: "evenements", id: e.id, data: d, deleted: true});
+  }
+  return out;
+}
+let snT = null, snBusy = false;
+function planSaillies() {
+  clearTimeout(snT);
+  snT = setTimeout(async () => {
+    if (snBusy || readOnly || Store.state.phase !== "ready") return;
+    derive(); const del = sailliesInvalides();
+    if (del.length) { del.forEach(x => S.evenements.delete(x.id)); derive(); del.forEach(x => S.evenements.set(x.id, {...x.data, id: x.id})); }
+    const add = sailliesAFaire().filter(x => !del.some(y => y.id === x.id)), items = [...del, ...add]; if (!items.length) return;
+    snBusy = true;
+    try { await Store.write(items);
+      toast([add.length && `${add.length} saillie${add.length > 1 ? "s naturelles enregistrées" : " naturelle enregistrée"} (taureau présent dans le lot)`, del.length && `${del.length} saillie${del.length > 1 ? "s automatiques retirées" : " automatique retirée"} (taureau absent du lot à cette date)`].filter(Boolean).join(" · ") + "."); }
+    catch (e) { console.warn("saillies", e); } finally { snBusy = false; }
+  }, 1500);
+}
+// historique des taureaux d'un lot : [{t, debut, fin}]
+function taureauxDuLot(lot) {
+  const out = [];
+  for (const t of S.animaux.values()) if (estTaureau(t)) for (const p of periodesLots(t)) if (p.lot === lot) out.push({t, debut: p.debut, fin: p.fin});
+  return out.sort((x, y) => (x.debut || "").localeCompare(y.debut || ""));
+}
+function taureauxTxt(lot) {
+  return taureauxDuLot(lot).map(x => `${x.fin ? "" : "<b>"}${esc(taureauLabel(x.t))}${x.fin ? "" : "</b>"} <small class="muted">${x.debut ? (x.fin ? `du ${fmtD(x.debut)} au ${fmtD(x.fin)}` : `depuis le ${fmtD(x.debut)}`) : x.fin ? `jusqu'au ${fmtD(x.fin)}` : "présent"}</small>`).join("<br>");
+}
+
 /* ---------- lots ---------- */
 // Un lot existe dès qu'au moins un animal y est rangé (champ « lot » de l'animal) : rien d'autre à stocker.
 const byTravail = (x, y) => norm(x.numero).slice(-4).localeCompare(norm(y.numero).slice(-4));
@@ -1356,8 +1460,8 @@ function lotsDlg() {
   const l = lotsInfo(), sans = presents().filter(a => !a.lot).length;
   openDlg(`<div class="dlg-head"><h3>Lots</h3><button class="close" data-act="close" aria-label="Fermer">×</button></div>
   <div class="dlg-body">
-    ${l.length ? `<div class="tablebox"><table><thead><tr><th>Lot</th><th class="n">Animaux</th><th>Composition</th><th></th></tr></thead><tbody>
-      ${l.map(([n, as]) => `<tr data-act="lot-voir" data-lot="${esc(n)}"><td><b>${esc(n)}</b></td><td class="n">${as.length}</td><td class="wrap">${esc(compo(as))}</td><td class="n" style="white-space:nowrap"><button class="btn ghost sm" data-act="lot-voir" data-lot="${esc(n)}">Voir</button>${readOnly ? "" : `<button class="btn sm" data-act="lot-edit" data-lot="${esc(n)}">Modifier</button>`}</td></tr>`).join("")}
+    ${l.length ? `<div class="tablebox"><table><thead><tr><th>Lot</th><th class="n">Animaux</th><th>Composition</th><th>Taureau</th><th></th></tr></thead><tbody>
+      ${l.map(([n, as]) => `<tr data-act="lot-voir" data-lot="${esc(n)}"><td><b>${esc(n)}</b></td><td class="n">${as.length}</td><td class="wrap">${esc(compo(as))}</td><td class="wrap">${taureauxTxt(n)}</td><td class="n" style="white-space:nowrap"><button class="btn ghost sm" data-act="lot-voir" data-lot="${esc(n)}">Voir</button>${readOnly ? "" : `<button class="btn sm" data-act="lot-edit" data-lot="${esc(n)}">Modifier</button>`}</td></tr>`).join("")}
     </tbody></table></div>` : `<p class="muted" style="margin:0">Aucun lot pour l'instant.</p>`}
     <p class="hint" style="margin:0">${sans ? `${sans} anima${sans > 1 ? "ux présents" : "l présent"} sans lot.` : "Tous les animaux présents sont dans un lot."}</p>
   </div>

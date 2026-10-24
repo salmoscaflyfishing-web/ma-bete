@@ -10,6 +10,8 @@ const configured = !!(CFG.supabaseUrl && CFG.supabaseAnonKey && window.supabase 
 const PAGE = 1000, BATCH = 300;
 
 const S = { animaux: new Map(), evenements: new Map(), finances: new Map(), boucles: new Map() };
+// identifiants supprimés (suppression logique), pour ne pas recréer automatiquement ce qu'on a effacé
+const DEL = { animaux: new Set(), evenements: new Set(), finances: new Set(), boucles: new Set() };
 const st = { phase: "init", farm: null, farmName: "", role: null, user: null, farms: [], online: navigator.onLine,
              pending: 0, syncing: false, authProblem: false, realtime: false, lastSync: null, needsMigration: false };
 // collections refusées par une base Supabase pas encore mise à jour (gardées en attente sur l'appareil)
@@ -58,7 +60,8 @@ async function loadFarm(farm) {
   const rows = await farmRecords(farm);
   if (farm !== st.farm) return;
   COLS.forEach(c => S[c].clear());
-  for (const r of rows) if (!r.deleted && S[r.col]) S[r.col].set(r.id, { ...r.data, id: r.id });
+  COLS.forEach(c => DEL[c].clear());
+  for (const r of rows) { if (!S[r.col]) continue; if (r.deleted) DEL[r.col].add(r.id); else S[r.col].set(r.id, { ...r.data, id: r.id }); }
   emit("change");
 }
 async function countPending() {
@@ -76,14 +79,13 @@ async function write(items) {
   if (st.role === "viewer") throw Object.assign(new Error("Lecture seule"), { code: "readonly" });
   const cloud = farm !== LOCAL, now = new Date().toISOString();
   for (const it of items) {
-    if (it.deleted) S[it.col].delete(it.id); else S[it.col].set(it.id, { ...it.data, id: it.id });
+    if (it.deleted) { S[it.col].delete(it.id); DEL[it.col].add(it.id); } else { S[it.col].set(it.id, { ...it.data, id: it.id }); DEL[it.col].delete(it.id); }
   }
   emit("change");
   await tx(["records", "outbox"], "readwrite", t => {
     const rs = t.objectStore("records"), ob = t.objectStore("outbox");
     for (const it of items) {
       const k = key(farm, it.col, it.id), data = it.data || {};
-      if (!cloud && it.deleted) { rs.delete(k); continue; }
       rs.put({ k, farm, col: it.col, id: it.id, data, deleted: !!it.deleted, updated_at: now, server: false });
       if (cloud) ob.add({ k, farm, col: it.col, id: it.id, data, deleted: !!it.deleted });
     }
@@ -113,7 +115,7 @@ async function applyRows(farm, rows) {
     });
   });
   if (farm !== st.farm || !applied.length) return;
-  for (const r of applied) { if (r.deleted) S[r.collection].delete(r.id); else S[r.collection].set(r.id, { ...(r.data || {}), id: r.id }); }
+  for (const r of applied) { if (r.deleted) { S[r.collection].delete(r.id); DEL[r.collection].add(r.id); } else { S[r.collection].set(r.id, { ...(r.data || {}), id: r.id }); DEL[r.collection].delete(r.id); } }
   emit("change");
 }
 
@@ -282,7 +284,7 @@ const authErr = e => {
 const redirectTo = () => location.origin + location.pathname;
 
 const Store = {
-  S, COLS, LOCAL, configured, state: st,
+  S, DEL, COLS, LOCAL, configured, state: st,
   on(t, f) { listeners[t].push(f); },
   put, del, write,
   flush, pull, countPending,
